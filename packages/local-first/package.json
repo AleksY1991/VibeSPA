@@ -1,0 +1,59 @@
+{
+  "name": "@vibespa/local-first",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src"
+  ],
+  "exports": {
+    ".": {
+      "development": {
+        "types": "./src/index.ts",
+        "import": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./adapter": {
+      "development": {
+        "types": "./src/adapter.ts",
+        "import": "./src/adapter.ts",
+        "default": "./src/adapter.ts"
+      },
+      "types": "./dist/adapter.d.ts",
+      "import": "./dist/adapter.js",
+      "default": "./dist/adapter.js"
+    },
+    "./session": {
+      "development": {
+        "types": "./src/session.ts",
+        "import": "./src/session.ts",
+        "default": "./src/session.ts"
+      },
+      "types": "./dist/session.d.ts",
+      "import": "./dist/session.js",
+      "default": "./dist/session.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build.mjs"
+  },
+  "dependencies": {
+    "@vibespa/contracts": "workspace:*",
+    "rxdb": "17.6.0",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@vibespa/core": "workspace:*",
+    "fake-indexeddb": "^6.2.4"
+  },
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

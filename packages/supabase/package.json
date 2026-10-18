@@ -1,0 +1,38 @@
+{
+  "name": "@vibespa/supabase",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "development": {
+        "types": "./src/index.ts",
+        "import": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@vibespa/contracts": "workspace:*",
+    "@vibespa/local-first": "workspace:*"
+  },
+  "peerDependencies": {
+    "@supabase/supabase-js": "^2.110.9",
+    "rxdb": "^17.6.0"
+  },
+  "devDependencies": {
+    "@vibespa/core": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

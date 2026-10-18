@@ -1,0 +1,48 @@
+{
+  "name": "@vibespa/contracts",
+  "version": "0.1.0",
+  "description": "Framework-neutral contracts for VibeSPA modules.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "development": {
+        "types": "./src/index.ts",
+        "import": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./readable": {
+      "development": {
+        "types": "./src/readable.ts",
+        "import": "./src/readable.ts",
+        "default": "./src/readable.ts"
+      },
+      "types": "./dist/readable.d.ts",
+      "import": "./dist/readable.js",
+      "default": "./dist/readable.js"
+    },
+    "./scope": {
+      "development": {
+        "types": "./src/scope.ts",
+        "import": "./src/scope.ts",
+        "default": "./src/scope.ts"
+      },
+      "types": "./dist/scope.d.ts",
+      "import": "./dist/scope.js",
+      "default": "./dist/scope.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

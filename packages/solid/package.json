@@ -1,0 +1,80 @@
+{
+  "name": "@vibespa/solid",
+  "version": "0.1.0",
+  "description": "Owned Solid views over neutral reads and configurable native RxDB reactivity.",
+  "type": "module",
+  "license": "ISC",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "development": {
+        "types": "./src/index.ts",
+        "import": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./readable": {
+      "development": {
+        "types": "./src/readable.ts",
+        "import": "./src/readable.ts",
+        "default": "./src/readable.ts"
+      },
+      "types": "./dist/readable.d.ts",
+      "import": "./dist/readable.js",
+      "default": "./dist/readable.js"
+    },
+    "./ownership": {
+      "development": {
+        "types": "./src/ownership.ts",
+        "import": "./src/ownership.ts",
+        "default": "./src/ownership.ts"
+      },
+      "types": "./dist/ownership.d.ts",
+      "import": "./dist/ownership.js",
+      "default": "./dist/ownership.js"
+    },
+    "./rxdb": {
+      "development": {
+        "types": "./src/rxdb.ts",
+        "import": "./src/rxdb.ts",
+        "default": "./src/rxdb.ts"
+      },
+      "types": "./dist/rxdb.d.ts",
+      "import": "./dist/rxdb.js",
+      "default": "./dist/rxdb.js"
+    },
+    "./rxdb-batch": {
+      "development": {
+        "types": "./src/rxdbBatch.ts",
+        "import": "./src/rxdbBatch.ts",
+        "default": "./src/rxdbBatch.ts"
+      },
+      "types": "./dist/rxdbBatch.d.ts",
+      "import": "./dist/rxdbBatch.js",
+      "default": "./dist/rxdbBatch.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@vibespa/contracts": "workspace:*"
+  },
+  "peerDependencies": {
+    "rxdb": "17.6.0",
+    "rxjs": "7.8.2",
+    "solid-js": "2.0.0-rc.14"
+  },
+  "peerDependenciesMeta": {
+    "rxdb": { "optional": true },
+    "rxjs": { "optional": true }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

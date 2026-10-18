@@ -1,0 +1,16 @@
+packages:
+  - packages/*
+  - apps/*
+
+autoInstallPeers: false
+
+overrides:
+  '@solidjs/signals': 2.0.0-rc.14
+  '@solidjs/compiler': 2.0.0-rc.14
+  '@solidjs/babel-plugin': 2.0.0-rc.14
+
+allowBuilds:
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - fake-indexeddb@6.2.6

@@ -1,0 +1,26 @@
+{
+  "name": "@vibespa/eslint-plugin",
+  "version": "0.1.0",
+  "description": "Executable micro-modular architecture boundaries for VibeSPA",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": ["src"],
+  "sideEffects": false,
+  "peerDependencies": {
+    "eslint": ">=9"
+  },
+  "devDependencies": {
+    "eslint": "10.8.0",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "license": "ISC"
+}

@@ -1,0 +1,48 @@
+{
+  "name": "vibespa",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Good vibes. Clear boundaries. A micro-modular SPA framework extracted from Haku.",
+  "type": "module",
+  "license": "ISC",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @vibespa/playground dev",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run && node --test packages/create-vibespa/test/*.test.mjs",
+    "test:watch": "vitest",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "build:packages": "node scripts/build.mjs",
+    "export:adapters": "pnpm build:packages && node scripts/export-adapters.mjs",
+    "build": "pnpm check && pnpm build:packages && pnpm --filter @vibespa/playground build && node scripts/prepare-template.mjs",
+    "preview": "pnpm --filter @vibespa/playground preview",
+    "create:app": "node packages/create-vibespa/bin/create-vibespa.mjs",
+    "create:module": "node packages/create-vibespa/bin/create-vibespa.mjs module"
+  },
+  "devDependencies": {
+    "@babel/preset-typescript": "7.28.5",
+    "@eslint/js": "10.0.1",
+    "@solidjs/vite-plugin": "3.0.0-next.49",
+    "@solidjs/web": "2.0.0-rc.14",
+    "@supabase/supabase-js": "2.110.9",
+    "@types/node": "26.1.2",
+    "@vibespa/contracts": "workspace:*",
+    "@vibespa/core": "workspace:*",
+    "@vibespa/eslint-plugin": "workspace:*",
+    "eslint": "10.8.0",
+    "fake-indexeddb": "6.2.6",
+    "globals": "17.8.0",
+    "happy-dom": "20.12.0",
+    "rxdb": "17.6.0",
+    "solid-js": "2.0.0-rc.14",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vite": "8.1.5",
+    "vitest": "4.1.10",
+    "rxjs": "7.8.2"
+  }
+}

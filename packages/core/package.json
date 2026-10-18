@@ -1,0 +1,91 @@
+{
+  "name": "@vibespa/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Micro-modular composition, readable boundaries, and owned lifetimes.",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "development": {
+        "types": "./src/index.ts",
+        "import": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./readable": {
+      "development": {
+        "types": "./src/readable.ts",
+        "import": "./src/readable.ts",
+        "default": "./src/readable.ts"
+      },
+      "types": "./dist/readable.d.ts",
+      "import": "./dist/readable.js",
+      "default": "./dist/readable.js"
+    },
+    "./scope": {
+      "development": {
+        "types": "./src/scope.ts",
+        "import": "./src/scope.ts",
+        "default": "./src/scope.ts"
+      },
+      "types": "./dist/scope.d.ts",
+      "import": "./dist/scope.js",
+      "default": "./dist/scope.js"
+    },
+    "./module": {
+      "development": {
+        "types": "./src/module.ts",
+        "import": "./src/module.ts",
+        "default": "./src/module.ts"
+      },
+      "types": "./dist/module.d.ts",
+      "import": "./dist/module.js",
+      "default": "./dist/module.js"
+    },
+    "./registry": {
+      "development": {
+        "types": "./src/registry.ts",
+        "import": "./src/registry.ts",
+        "default": "./src/registry.ts"
+      },
+      "types": "./dist/registry.d.ts",
+      "import": "./dist/registry.js",
+      "default": "./dist/registry.js"
+    },
+    "./session": {
+      "development": {
+        "types": "./src/session.ts",
+        "import": "./src/session.ts",
+        "default": "./src/session.ts"
+      },
+      "types": "./dist/session.d.ts",
+      "import": "./dist/session.js",
+      "default": "./dist/session.js"
+    },
+    "./system": {
+      "development": {
+        "types": "./src/system.ts",
+        "import": "./src/system.ts",
+        "default": "./src/system.ts"
+      },
+      "types": "./dist/system.d.ts",
+      "import": "./dist/system.js",
+      "default": "./dist/system.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@vibespa/contracts": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

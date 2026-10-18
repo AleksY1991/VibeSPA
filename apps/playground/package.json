@@ -1,0 +1,24 @@
+{
+  "name": "@vibespa/playground",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vibespa/contracts": "workspace:*",
+    "@vibespa/core": "workspace:*",
+    "@vibespa/solid": "workspace:*",
+    "@vibespa/local-first": "workspace:*",
+    "@solidjs/web": "2.0.0-rc.14",
+    "solid-js": "2.0.0-rc.14"
+  },
+  "devDependencies": {
+    "@solidjs/vite-plugin": "3.0.0-next.49",
+    "vite": "8.1.5"
+  }
+}
