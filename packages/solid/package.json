@@ -36,6 +36,16 @@
       "import": "./dist/ownership.js",
       "default": "./dist/ownership.js"
     },
+    "./module": {
+      "development": {
+        "types": "./src/module.ts",
+        "import": "./src/module.ts",
+        "default": "./src/module.ts"
+      },
+      "types": "./dist/module.d.ts",
+      "import": "./dist/module.js",
+      "default": "./dist/module.js"
+    },
     "./rxdb": {
       "development": {
         "types": "./src/rxdb.ts",
@@ -56,10 +66,19 @@
       "import": "./dist/rxdbBatch.js",
       "default": "./dist/rxdbBatch.js"
     },
+    "./domain": {
+      "development": { "types": "./src/domain.ts", "import": "./src/domain.ts", "default": "./src/domain.ts" },
+      "types": "./dist/domain.d.ts", "import": "./dist/domain.js", "default": "./dist/domain.js"
+    },
+    "./domain-rest": {
+      "development": { "types": "./src/domain/rest.ts", "import": "./src/domain/rest.ts", "default": "./src/domain/rest.ts" },
+      "types": "./dist/domain/rest.d.ts", "import": "./dist/domain/rest.js", "default": "./dist/domain/rest.js"
+    },
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@vibespa/contracts": "workspace:*"
+    "@vibespa/contracts": "workspace:*",
+    "@vibespa/core": "workspace:*"
   },
   "peerDependencies": {
     "rxdb": "17.6.0",

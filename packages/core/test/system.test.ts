@@ -2,7 +2,7 @@ import type { Scope } from '@vibespa/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { defineFeatureModule, FeatureType } from '../src/module.js';
 import type { ModuleFactory } from '../src/module.js';
-import { createSystem } from '../src/system.js';
+import { createSystem, from } from '../src/system.js';
 
 type Inputs = Record<string, never>;
 interface Exports { readonly value: string }
@@ -15,6 +15,20 @@ function feature(id: string, factory: ModuleFactory<Inputs, Exports> = () => ({ 
     description: `Owns ${id}.`,
     contract: { inputs: {}, exports: { value: 'The public value.' } },
     load: async () => factory,
+  });
+}
+
+interface ConsumerInputs { readonly provider: string }
+
+/** A module whose only input is borrowed from a provider through from(). */
+function consumer(id: string, load: () => Promise<ModuleFactory<ConsumerInputs, Exports>> = async () => () => ({ value: id })) {
+  return defineFeatureModule<FeatureType.Service, ConsumerInputs, Exports>({
+    id,
+    kind: FeatureType.Service,
+    title: `${id} service`,
+    description: `Borrows a provider value for ${id}.`,
+    contract: { inputs: { provider: 'The provider value.' }, exports: { value: 'The public value.' } },
+    load,
   });
 }
 
@@ -71,21 +85,20 @@ describe('observable system ownership', () => {
     expect(snapshot.modules[0]?.state).toBe('ready');
   });
 
-  it('accepts only ready dependency handles created by the same system', async () => {
+  it('accepts only ready provider handles created by the same system', async () => {
     const system = createSystem({ id: 'app' });
     const foreign = createSystem({ id: 'foreign' });
     const dependency = await system.start(feature('dependency'), {});
     const other = await foreign.start(feature('other'), {});
     const load = vi.fn(async () => () => ({ value: 'dependent' }));
-    const dependent = defineFeatureModule({ ...feature('dependent'), load });
-    await expect(system.start(dependent, {}, { dependencies: [other] })).rejects.toThrow('does not belong');
-    await expect(system.start(dependent, {}, { dependencies: [{ ...dependency }] })).rejects.toThrow('does not belong');
-    await expect(system.start(dependent, {}, { dependencies: [dependency, dependency] })).rejects.toThrow('Duplicate dependency');
+    const dependent = consumer('dependent', load);
+    await expect(system.start(dependent, { provider: from(other, 'value') })).rejects.toThrow('does not belong');
+    await expect(system.start(dependent, { provider: from({ ...dependency }, 'value') })).rejects.toThrow('does not belong');
     expect(load).not.toHaveBeenCalled();
-    await system.start(dependent, {}, { id: 'custom', dependencies: [dependency] });
+    await system.start(dependent, { provider: from(dependency, 'value') }, { id: 'custom' });
     expect(system.snapshot.read().modules[1]?.dependencies).toEqual(['dependency']);
     const disposal = system.dispose();
-    await expect(system.start(dependent, {}, { id: 'stale', dependencies: [dependency] })).rejects.toThrow('disposing');
+    await expect(system.start(dependent, { provider: from(dependency, 'value') }, { id: 'stale' })).rejects.toThrow('disposing');
     await disposal;
     await foreign.dispose();
   });
@@ -104,7 +117,8 @@ describe('observable system ownership', () => {
     expect(system.snapshot.read().modules[1]?.error).toContain('construction failed');
     expect(system.snapshot.read().modules[1]?.error).toContain('release failed');
     expect(system.snapshot.read().events.map(event => event.type)).toContain('rolling-back');
-    await system.dispose();
+    await expect(system.dispose()).rejects.toBeInstanceOf(AggregateError);
+    expect(system.snapshot.read().state).toBe('failed');
   });
 
   it('cancels immediately, waits for startup, and releases resources arriving after cancellation', async () => {
@@ -194,6 +208,101 @@ describe('observable system ownership', () => {
     stop();
   });
 
+  it('joins in-flight traces before cleanup, including resources acquired after cancellation', async () => {
+    const arrival = deferred<void>();
+    const events: string[] = [];
+    let scope!: Scope;
+    let entered = false;
+    const system = createSystem({
+      id: 'app',
+      createRuntime: () => ({
+        run(operation) {
+          entered = true;
+          try { return operation(); } finally { entered = false; }
+        },
+        quiesce() { events.push('quiesce'); },
+        dispose() { events.push('runtime'); return []; },
+      }),
+    });
+    const handle = await system.start(feature('service', (_inputs, context) => {
+      expect(entered).toBe(true);
+      scope = context;
+      scope.defer(() => { events.push('original resource'); });
+      return { value: 'ready' };
+    }), {});
+    const operation = system.trace(handle, 'open', async () => {
+      expect(entered).toBe(true);
+      await arrival.promise;
+      expect(scope.signal.aborted).toBe(true);
+      scope.defer(() => { events.push('late resource'); });
+      events.push('operation finished');
+      return 'result';
+    });
+    let disposed = false;
+    const disposal = system.dispose().then(() => { disposed = true; });
+    await Promise.resolve();
+    expect(disposed).toBe(false);
+    expect(events).toEqual(['quiesce']);
+    arrival.resolve();
+    await expect(operation).resolves.toBe('result');
+    await disposal;
+    expect(events).toEqual(['quiesce', 'runtime', 'operation finished', 'late resource', 'original resource']);
+    const journal = system.snapshot.read().events;
+    const completed = journal.findIndex(event => event.type === 'operation-completed');
+    const released = journal.findIndex(event => event.type === 'disposed' && event.moduleId === handle.id);
+    expect(completed).toBeGreaterThan(-1);
+    expect(completed).toBeLessThan(released);
+  });
+
+  it('tracks an operation before its callback requests reentrant shutdown', async () => {
+    const finish = deferred<void>();
+    const close = vi.fn();
+    const system = createSystem({ id: 'app' });
+    const handle = await system.start(feature('service', (_inputs, scope) => {
+      scope.defer(close);
+      return { value: 'ready' };
+    }), {});
+    let disposal!: Promise<void>;
+    const operation = system.trace(handle, 'stop', async () => {
+      disposal = system.dispose();
+      await finish.promise;
+      return 'stopped';
+    });
+    await Promise.resolve();
+    expect(close).not.toHaveBeenCalled();
+    finish.resolve();
+    await expect(operation).resolves.toBe('stopped');
+    await disposal;
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('joins rejected operations and records failure before releasing their resources', async () => {
+    const finish = deferred<void>();
+    const close = vi.fn();
+    const system = createSystem({ id: 'app' });
+    const handle = await system.start(feature('service', (_inputs, scope) => {
+      scope.defer(close);
+      return { value: 'ready' };
+    }), {});
+    const operation = system.trace(handle, 'save', async () => {
+      await finish.promise;
+      throw new Error('save failed');
+    });
+    const rejected = expect(operation).rejects.toThrow('save failed');
+    const disposal = system.dispose();
+    await Promise.resolve();
+    expect(close).not.toHaveBeenCalled();
+    finish.resolve();
+    await rejected;
+    await disposal;
+    expect(close).toHaveBeenCalledOnce();
+    const journal = system.snapshot.read().events;
+    const failed = journal.findIndex(event => event.type === 'operation-failed');
+    const released = journal.findIndex(event => event.type === 'disposed' && event.moduleId === handle.id);
+    expect(failed).toBeGreaterThan(-1);
+    expect(failed).toBeLessThan(released);
+  });
+
   it('reports rollback cleanup failure even when startup was cancelled', async () => {
     const system = createSystem({ id: 'app' });
     const arrived = deferred<void>();
@@ -253,7 +362,7 @@ describe('observable system ownership', () => {
   it('aborts all modules before disposing dependents and preserves failed teardown', async () => {
     const events: string[] = [];
     const system = createSystem({ id: 'app' });
-    const factory = (id: string, broken = false) => (_inputs: Inputs, scope: Scope) => {
+    const factory = (id: string, broken = false) => (_inputs: object, scope: Scope) => {
       scope.signal.addEventListener('abort', () => { events.push(`${id}:abort`); });
       scope.defer(() => {
         events.push(`${id}:dispose`);
@@ -262,7 +371,7 @@ describe('observable system ownership', () => {
       return { value: id };
     };
     const dependency = await system.start(feature('database', factory('database')), {});
-    await system.start(feature('feature', factory('feature', true)), {}, { dependencies: [dependency] });
+    await system.start(consumer('feature', async () => factory('feature', true)), { provider: from(dependency, 'value') });
     await expect(system.dispose()).rejects.toBeInstanceOf(AggregateError);
     expect(events).toEqual(['database:abort', 'feature:abort', 'feature:dispose', 'database:dispose']);
     expect(system.snapshot.read().state).toBe('failed');

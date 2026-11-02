@@ -1,0 +1,72 @@
+import { FeatureType, createScope, createSystem, defineFeatureModule, external, from, startModule } from '@vibespa/core';
+import { defineModule, startModule as startSmallModule } from '@vibespa/core/module';
+import { createSystem as createSystemFromSubpath, external as externalFromSubpath, from as fromSubpath } from '@vibespa/core/system';
+import type { ModuleDefinition } from '@vibespa/core/module';
+import type { Readable } from '@vibespa/contracts';
+import { createGreeting, greeting, smallGreeting } from './greeting.js';
+import type { GreetingExports, GreetingInputs } from './greeting.js';
+
+const scope = createScope();
+const ordinary = await startModule(greeting, { prefix: 'Hello' }, scope);
+const limited = await startSmallModule(smallGreeting, { prefix: 'Hi', maximumLength: 20 }, scope);
+const system = createSystem({ id: 'consumer' });
+const handle = await system.start(greeting, { prefix: external('Welcome'), maximumLength: external(40) });
+const other = await system.start(greeting, { prefix: external('Hello') }, { id: 'other' });
+const result: string = ordinary.greet(limited.greet(handle.exports.greet(other.exports.greet('Ada'))));
+
+// A host may supply more capabilities than its factory needs.
+const narrow: ModuleDefinition<GreetingInputs & { readonly locale: string }, GreetingExports> = {
+  id: 'narrow', load: async () => createGreeting,
+};
+await startSmallModule(narrow, { prefix: result, locale: 'en' }, scope);
+
+interface Repository {
+  find(id: string): string | undefined;
+  save(id: string, value: string): Promise<void>;
+}
+declare const repository: Repository;
+declare const title: Readable<string>;
+const reader = defineModule({
+  id: 'reader',
+  load: async () => (inputs: { repository: Pick<Repository, 'find'>; title: Readable<string> }) => ({
+    lookup: (id: string) => inputs.repository.find(id) ?? inputs.title.read(),
+  }),
+});
+const readerExports = await startSmallModule(reader, { repository, title }, scope);
+const found: string = readerExports.lookup('task');
+await repository.save('task', found);
+
+const dataProvider = defineFeatureModule({
+  id: 'data', kind: FeatureType.Store, title: 'Data', description: 'Supplies native data capabilities.',
+  contract: { inputs: {}, exports: { repository: 'Repository.', title: 'Current title.' } },
+  load: async () => (_inputs: object) => ({ repository, title }),
+});
+const narrowReader = defineFeatureModule({
+  id: 'narrow-reader', kind: FeatureType.Feature, title: 'Narrow reader', description: 'Consumes only reads.',
+  contract: {
+    inputs: { repository: 'Find rows.', data: 'Whole data export.', maximumLength: 'Optional title limit.' },
+    exports: { lookup: 'Read a title.' },
+  },
+  load: async () => (inputs: {
+    repository: Pick<Repository, 'find'>;
+    data: { title: Readable<string> };
+    maximumLength?: number;
+  }) => ({ lookup: () => (inputs.repository.find('row') ?? inputs.data.title.read()).slice(0, inputs.maximumLength) }),
+});
+const data = await system.start(dataProvider, {});
+const boundReader = await system.start(narrowReader, { repository: from(data, 'repository'), data: from(data) });
+const optionalReader = await system.start(narrowReader, {
+  repository: external(repository), data: from(data), maximumLength: external(40),
+}, { id: 'optional-reader' });
+const boundResult: string = boundReader.exports.lookup() + optionalReader.exports.lookup();
+await system.start(greeting, { prefix: external(boundResult) }, { id: 'bound-greeting' });
+
+const subpathSystem = createSystemFromSubpath({ id: 'subpath' });
+const subpathData = await subpathSystem.start(dataProvider, {});
+await subpathSystem.start(narrowReader, {
+  repository: fromSubpath(subpathData, 'repository'), data: fromSubpath(subpathData),
+  maximumLength: externalFromSubpath(undefined),
+});
+await subpathSystem.dispose();
+await system.dispose();
+await scope.dispose();

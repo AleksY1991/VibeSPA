@@ -75,6 +75,16 @@
       "import": "./dist/system.js",
       "default": "./dist/system.js"
     },
+    "./data": {
+      "development": {
+        "types": "./src/data.ts",
+        "import": "./src/data.ts",
+        "default": "./src/data.ts"
+      },
+      "types": "./dist/data.d.ts",
+      "import": "./dist/data.js",
+      "default": "./dist/data.js"
+    },
     "./package.json": "./package.json"
   },
   "dependencies": {

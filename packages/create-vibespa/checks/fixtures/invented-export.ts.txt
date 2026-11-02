@@ -1,0 +1,10 @@
+import { createScope, createSystem, external, startModule } from '@vibespa/core';
+import { startModule as startSmallModule } from '@vibespa/core/module';
+import { greeting, smallGreeting } from './greeting.js';
+
+const ordinary = await startModule(greeting, { prefix: 'Hello' }, createScope());
+ordinary.inventedExport(); // @diagnostic 2339 inventedExport
+const small = await startSmallModule(smallGreeting, { prefix: 'Hi' }, createScope());
+small.inventedExport(); // @diagnostic 2339 inventedExport
+const handle = await createSystem({ id: 'consumer' }).start(greeting, { prefix: external('Hello') });
+handle.exports.inventedExport(); // @diagnostic 2339 inventedExport

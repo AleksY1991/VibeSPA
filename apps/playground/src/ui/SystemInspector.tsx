@@ -15,6 +15,10 @@ const presentations: Record<FeatureType, {
     label: 'Policy', mark: '◇', responsibility: 'Rules & decisions',
     boundary: 'Evaluates a rule through its public contract.',
   },
+  [FeatureType.Data]: {
+    label: 'Data', mark: '▤', responsibility: 'Data contracts & capabilities',
+    boundary: 'Provides a validated part of the data graph through typed reads and writes.',
+  },
   [FeatureType.Store]: {
     label: 'Store', mark: '▤', responsibility: 'Durable data',
     boundary: 'Owns persistence behind explicit read and write ports.',
@@ -155,6 +159,22 @@ export function SystemInspector(props: {
           </For>
         </div>
         <p class="inspector-boundary-note">Dependency edges are declared by composition. The inspector observes public contracts and recorded operations; it does not inspect private state.</p>
+        {(snapshot().data?.length ?? 0) > 0 ? <section aria-label="Data graph">
+          <div class="inspector-section-heading"><h3>Data graph</h3><span>{snapshot().data?.length} contracts</span></div>
+          <For each={snapshot().data ?? []} keyed={node => node.id}>
+            {node => <article class="inspector-module" data-kind="data">
+              <h4><code>{node().id}</code> · version {node().version}</h4>
+              <p class="inspector-module-description">Provider definition: <code>{node().provider.definitionId}.{node().provider.port}</code></p>
+              <p class="inspector-boundary-note">Offers: {node().provider.capabilities.join(', ') || 'no additional guarantees'}</p>
+              <ul>
+                <For each={node().consumers} keyed={consumer => `${consumer.definitionId}.${consumer.port}`} fallback={<li>No module consumers declared.</li>}>
+                  {consumer => <li><code>{consumer().definitionId}.{consumer().port}</code> requires {consumer().capabilities.join(', ')}</li>}
+                </For>
+              </ul>
+              {node().relations.length > 0 ? <p class="inspector-boundary-note">Related contracts: {node().relations.join(', ')}</p> : null}
+            </article>}
+          </For>
+        </section> : null}
       </section>
 
       <section class="inspector-activity" aria-labelledby="inspector-activity-title">

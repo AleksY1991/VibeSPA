@@ -54,8 +54,10 @@ export default {
         }
       }
       if (domain || inContracts) {
+        const solidPresentation = packageMatch(source, ['@vibespa/solid'])
+          && (inContracts || !['@vibespa/solid/module', '@vibespa/solid/domain', '@vibespa/solid/domain-rest'].includes(source));
         if (/\.(?:css|scss|sass|less)(?:\?|$)/.test(source) || renderingPackages.test(source)
-          || matches(target, options.uiRoots) || packageMatch(source, ['@vibespa/solid'])) report(node);
+          || matches(target, options.uiRoots) || solidPresentation) report(node);
         if (node.type === 'ImportDeclaration' && source === 'solid-js') {
           for (const specifier of node.specifiers) {
             if (specifier.type === 'ImportNamespaceSpecifier' || specifier.type === 'ImportDefaultSpecifier') namespaces.add(specifier.local.name);

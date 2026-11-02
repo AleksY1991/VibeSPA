@@ -1,112 +1,79 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { copyTemplate, createApplication, createModule, resolveTemplateRoot } from '../src/scaffold.mjs';
+import { createApplication, createModule, resolveTemplateRoot } from '../src/scaffold.mjs';
+import { runCli } from '../src/cli.mjs';
 
+const archive = 'vibespa-core-0.1.0-abc123.tgz';
+
+/** A minimal application template, as scripts/prepare-template.mjs composes it. */
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'vibespa-scaffold-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const source = join(directory, 'source');
+  const source = join(directory, 'template');
   const write = async (path, contents) => {
     const parts = path.split('/');
     await mkdir(join(source, ...parts.slice(0, -1)), { recursive: true });
     await writeFile(join(source, ...parts), typeof contents === 'string' ? contents : JSON.stringify(contents));
   };
-  await write('package.json', {
-    name: 'vibespa',
-    scripts: {
-      dev: 'pnpm --filter @vibespa/playground dev',
-      build: 'node scripts/build.mjs && node scripts/prepare-template.mjs',
-      test: 'vitest run && node --test packages/create-vibespa/test/*.test.mjs',
-      'create:app': 'node packages/create-vibespa/bin/create-vibespa.mjs',
-      'create:module': 'node packages/create-vibespa/bin/create-vibespa.mjs module',
-    },
-    devDependencies: { '@vibespa/eslint-plugin': 'workspace:*' },
-  });
-  await write('pnpm-workspace.yaml', "packages:\n  - 'packages/*'\n  - 'apps/*'\n");
-  await write('tsconfig.base.json', {});
-  await write('.gitignore', '**/node_modules/\n**/dist/\n');
-  await write('LICENSE', 'ISC license fixture.\n');
-  for (const name of ['contracts', 'core', 'solid', 'local-first', 'supabase', 'settings', 'interaction', 'eslint-plugin']) {
-    await write(`packages/${name}/package.json`, { name: `@vibespa/${name}`, dependencies: name === 'contracts' ? {} : { '@vibespa/contracts': 'workspace:*' } });
-    await write(`packages/${name}/src/index.ts`, `export const packageName = '${name}';\n`);
-  }
-  await write('packages/core/dist/index.js', 'export const built = true;\n');
-  await write('packages/core/node_modules/ignored/secret', 'Do not copy.');
-  await write('packages/create-vibespa/template/recursive', 'Do not copy.');
-  await write('packages/create-vibespa/package.json', { name: 'create-vibespa' });
-  await write('apps/playground/package.json', { name: '@vibespa/playground', dependencies: { '@vibespa/core': 'workspace:*' } });
-  await write('apps/playground/src/main.ts', 'export {};\n');
-  await write('apps/playground/dist/ignored', 'Do not copy.');
-  await write('scripts/build.mjs', 'console.log("build");\n');
-  await write('scripts/prepare-template.mjs', 'throw new Error("not a standalone helper");\n');
+  await write('package.json', { name: 'vibespa-app', dependencies: { '@vibespa/core': `file:./vendor/${archive}`, 'solid-js': '2.0.0-rc.14' } });
+  await write('pnpm-workspace.yaml', `overrides:\n  '@vibespa/core': file:./vendor/${archive}\n`);
+  await write('pnpm-lock.yaml', "lockfileVersion: '9.0'\n");
+  for (const name of ['tsconfig.json', 'eslint.config.js', 'vitest.config.ts', 'vite.config.ts', 'index.html']) await write(name, '\n');
+  await write('src/main.ts', 'export {};\n');
+  await write('test-support/solid-diagnostics.ts', 'export const diagnosticsSetup = true;\n');
+  await write(`vendor/${archive}`, 'archive bytes');
+  await write('_gitignore', 'node_modules/\ndist/\n');
+  await write('.npmignore', '**/node_modules/\n');
+  await write('node_modules/ignored/secret', 'Do not copy.');
   return { directory, source, write };
 }
 
-test('application includes every framework dependency and built package, without source paths or CLI recursion', async (t) => {
+test('application copies the template with its pinned archives and its own name', async (t) => {
   const { directory, source } = await fixture(t);
   const destination = join(directory, 'example');
   await createApplication({ templateRoot: source, destination, name: 'quiet-space' });
-  const root = JSON.parse(await readFile(join(destination, 'package.json'), 'utf8'));
-  assert.equal(root.name, 'quiet-space');
-  assert.equal(root.private, true);
-  assert.equal(root.scripts.build, 'node scripts/build.mjs');
-  assert.equal(root.scripts.dev, 'pnpm --filter @vibespa/playground dev');
-  assert.equal(root.scripts.test, 'vitest run');
-  assert.equal(root.scripts['create:app'], undefined);
-  assert.equal(root.scripts['create:module'], undefined);
-  assert.equal(await readFile(join(destination, 'LICENSE'), 'utf8'), 'ISC license fixture.\n');
-  assert.equal(await readFile(join(destination, '.gitignore'), 'utf8'), '**/node_modules/\n**/dist/\n');
-  const packages = await readdir(join(destination, 'packages'));
-  assert.equal(packages.length, 8);
-  const manifests = await Promise.all(packages.map(async (name) => JSON.parse(await readFile(join(destination, 'packages', name, 'package.json'), 'utf8'))));
-  const names = new Set(manifests.map((manifest) => manifest.name));
-  for (const manifest of [root, ...manifests]) {
-    for (const [name, version] of Object.entries({ ...manifest.dependencies, ...manifest.devDependencies })) {
-      if (version.startsWith('workspace:')) assert.ok(names.has(name), `Missing workspace dependency: ${name}`);
-    }
-    assert.ok(!JSON.stringify(manifest).includes(source));
-  }
-  assert.equal(await readFile(join(destination, 'packages', 'core', 'dist', 'index.js'), 'utf8'), 'export const built = true;\n');
-  await assert.rejects(readFile(join(destination, 'packages', 'core', 'node_modules', 'ignored', 'secret')), { code: 'ENOENT' });
-  await assert.rejects(readFile(join(destination, 'packages', 'create-vibespa', 'template', 'recursive')), { code: 'ENOENT' });
-  await assert.rejects(readFile(join(destination, 'apps', 'playground', 'dist', 'ignored')), { code: 'ENOENT' });
-  await assert.rejects(readFile(join(destination, 'scripts', 'prepare-template.mjs')), { code: 'ENOENT' });
+  const manifest = JSON.parse(await readFile(join(destination, 'package.json'), 'utf8'));
+  assert.equal(manifest.name, 'quiet-space');
+  assert.equal(manifest.private, true);
+  assert.equal(manifest.dependencies['@vibespa/core'], `file:./vendor/${archive}`);
+  assert.equal(await readFile(join(destination, 'vendor', archive), 'utf8'), 'archive bytes');
+  assert.equal(await readFile(join(destination, 'test-support', 'solid-diagnostics.ts'), 'utf8'), 'export const diagnosticsSetup = true;\n');
+  assert.equal(await readFile(join(destination, '.gitignore'), 'utf8'), 'node_modules/\ndist/\n');
+  assert.deepEqual((await readdir(destination)).sort(), ['.gitignore', 'eslint.config.js', 'index.html', 'package.json',
+    'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'src', 'test-support', 'tsconfig.json', 'vendor', 'vite.config.ts', 'vitest.config.ts']);
 });
 
-test('a packaged template restores its encoded gitignore asset', async (t) => {
+test('a template without the diagnostics setup is refused before creating an application', async (t) => {
   const { directory, source } = await fixture(t);
-  await rename(join(source, '.gitignore'), join(source, '_gitignore'));
-  const destination = join(directory, 'from-package');
-  await createApplication({ templateRoot: source, destination, name: 'from-package' });
-  assert.equal(await readFile(join(destination, '.gitignore'), 'utf8'), '**/node_modules/\n**/dist/\n');
-  await assert.rejects(readFile(join(destination, '_gitignore')), { code: 'ENOENT' });
+  await rm(join(source, 'test-support'), { recursive: true });
+  const destination = join(directory, 'incomplete');
+  await assert.rejects(createApplication({ templateRoot: source, destination, name: 'incomplete' }), /missing test-support/);
+  await assert.rejects(readdir(destination), { code: 'ENOENT' });
 });
 
-test('an installed CLI uses its embedded template inside an unrelated monorepo', async (t) => {
+test('a template must contain every archive it references and no workspace links', async (t) => {
+  const { directory, source, write } = await fixture(t);
+  const destination = join(directory, 'example');
+  await rm(join(source, 'vendor', archive));
+  await assert.rejects(createApplication({ templateRoot: source, destination, name: 'example' }), /archive is missing/);
+  await write(`vendor/${archive}`, 'archive bytes');
+  await write('pnpm-workspace.yaml', "overrides:\n  '@vibespa/core': file:../VibeSPA/packages/core\n");
+  await assert.rejects(createApplication({ templateRoot: source, destination, name: 'example' }), /archive is missing/);
+  await write('pnpm-workspace.yaml', '\n');
+  await write('package.json', { name: 'vibespa-app', dependencies: { '@vibespa/core': 'workspace:*' } });
+  await assert.rejects(createApplication({ templateRoot: source, destination, name: 'example' }), /not portable/);
+  await assert.rejects(readdir(destination), { code: 'ENOENT' });
+});
+
+test('the CLI uses only its embedded template and explains a missing one', async (t) => {
   const { directory, source } = await fixture(t);
-  const unrelated = join(directory, 'other-monorepo');
-  const installed = join(unrelated, 'node_modules', 'create-vibespa');
-  const embedded = join(installed, 'template');
-  await copyTemplate({ templateRoot: source, destination: embedded, name: 'bundled-seed' });
-  await mkdir(join(unrelated, 'packages', 'core'), { recursive: true });
-  await writeFile(join(unrelated, 'package.json'), JSON.stringify({ name: 'other-monorepo' }));
-  await writeFile(join(unrelated, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
-  await writeFile(join(unrelated, 'packages', 'core', 'package.json'), JSON.stringify({ name: '@unrelated/core' }));
-  await writeFile(join(installed, 'package.json'), JSON.stringify({ name: 'create-vibespa' }));
-  assert.equal(await resolveTemplateRoot(installed), embedded);
-});
-
-test('a valid source CLI uses current sources even when an embedded seed exists', async (t) => {
-  const { source } = await fixture(t);
-  const local = join(source, 'packages', 'create-vibespa');
-  await rm(join(local, 'template'), { recursive: true, force: true });
-  await copyTemplate({ templateRoot: source, destination: join(local, 'template'), name: 'bundled-seed' });
-  assert.equal(await resolveTemplateRoot(local), source);
-  await writeFile(join(source, 'packages', 'core', 'package.json'), JSON.stringify({ name: '@unrelated/core' }));
-  assert.equal(await resolveTemplateRoot(local), join(local, 'template'));
+  const installed = join(directory, 'node_modules', 'create-vibespa');
+  await cp(source, join(installed, 'template'), { recursive: true });
+  assert.equal(await resolveTemplateRoot(installed), join(installed, 'template'));
+  await assert.rejects(resolveTemplateRoot(join(directory, 'empty-cli')), /run pnpm build first/);
 });
 
 test('application refuses existing contents and preserves them', async (t) => {
@@ -117,14 +84,6 @@ test('application refuses existing contents and preserves them', async (t) => {
   await assert.rejects(createApplication({ templateRoot: source, destination, name: 'example' }), /empty directory/);
   assert.deepEqual(await readdir(destination), ['keep.txt']);
   assert.equal(await readFile(join(destination, 'keep.txt'), 'utf8'), 'Keep me.');
-});
-
-test('an unresolved workspace dependency fails before creating an incomplete app', async (t) => {
-  const { directory, source, write } = await fixture(t);
-  await write('packages/core/package.json', { name: '@vibespa/core', dependencies: { '@vibespa/missing': 'workspace:*' } });
-  const destination = join(directory, 'example');
-  await assert.rejects(createApplication({ templateRoot: source, destination, name: 'example' }), /missing workspace package @vibespa\/missing/);
-  await assert.rejects(readdir(destination), { code: 'ENOENT' });
 });
 
 test('invalid application names cannot create a destination', async (t) => {
@@ -153,19 +112,22 @@ test('template symlinks are rejected before the destination is created', async (
   const outside = join(directory, 'outside');
   await mkdir(outside);
   await writeFile(join(outside, 'private.txt'), 'Private.');
-  await symlink(outside, join(source, 'packages', 'core', 'src', 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
+  await symlink(outside, join(source, 'src', 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
   const destination = join(directory, 'example');
   await assert.rejects(createApplication({ templateRoot: source, destination, name: 'example' }), /symbolic link/);
   await assert.rejects(readdir(destination), { code: 'ENOENT' });
 });
 
-test('module scaffold has an enumerable kind, documented typed contract, and lazy read-only runtime', async (t) => {
+test('module scaffold has an enumerable kind, documented typed contract, and lazy owned accessor runtime', async (t) => {
   const { directory } = await fixture(t);
   const application = join(directory, 'application');
   await mkdir(join(application, 'src'), { recursive: true });
   await writeFile(join(application, 'package.json'), '{}');
   const module = await createModule({ application, name: 'daily-intention' });
-  assert.match(await readFile(join(module, 'contract.ts'), 'utf8'), /readonly message: Readable<string>/);
+  const contract = await readFile(join(module, 'contract.ts'), 'utf8');
+  assert.match(contract, /import type \{ Accessor \} from 'solid-js'/);
+  assert.match(contract, /readonly message: Accessor<string>/);
+  assert.ok(!contract.includes('Readable'));
   const definition = await readFile(join(module, 'definition.ts'), 'utf8');
   assert.match(definition, /import \{ FeatureType \} from '@vibespa\/contracts'/);
   assert.match(definition, /defineFeatureModule<FeatureType.Feature, DailyIntentionInputs, DailyIntentionExports>/);
@@ -173,15 +135,36 @@ test('module scaffold has an enumerable kind, documented typed contract, and laz
   assert.match(definition, /title: 'Daily Intention'/);
   assert.match(definition, /description: 'Provides the daily-intention message capability\.'/);
   assert.match(definition, /inputs: \{ message: 'The initial message supplied by the owning composition\.' \}/);
-  assert.match(definition, /exports: \{ message: 'Read the current message and subscribe to subsequent changes\.' \}/);
+  assert.match(definition, /exports: \{ message: 'A tracked accessor for the current message\.' \}/);
   assert.match(definition, /load: \(\) => import\('\.\/internal\/runtime\.js'\)/);
   const runtime = await readFile(join(module, 'internal', 'runtime.ts'), 'utf8');
-  assert.match(runtime, /constantReadable\(inputs\.message\)/);
-  assert.ok(!runtime.includes('set('));
+  assert.match(runtime, /import type \{ ModuleContext \} from '@vibespa\/core\/module'/);
+  assert.match(runtime, /createDailyIntention\(inputs: DailyIntentionInputs, _scope: ModuleContext\): DailyIntentionExports/);
+  for (const operation of ['run', 'task', 'commands', 'acquire', 'defer']) assert.ok(runtime.includes(`_scope.${operation}`));
+  assert.match(runtime, /const \[message\] = createSignal\(inputs\.message\);/);
+  assert.match(runtime, /return \{ message \};/);
+  assert.match(runtime, /moduleAccessor\(_scope, readable\)/);
+  // The setter stays private to the runtime; only the accessor is exported.
+  assert.ok(!/set[A-Z]\w*\(/.test(runtime));
   await assert.rejects(createModule({ application, name: 'daily-intention' }), /already exists/);
   for (const name of ['../escape', 'foo/bar', 'with space', '0name', 'foo-0bar', 'UpperCase', 'foo--bar', 'trailing-', '']) {
     await assert.rejects(createModule({ application, name }), /Module name/);
   }
+});
+
+test('module command explains from() and external() with valid start examples', async (t) => {
+  const { directory } = await fixture(t);
+  const application = join(directory, 'application');
+  await mkdir(join(application, 'src'), { recursive: true });
+  await writeFile(join(application, 'package.json'), '{}');
+  const lines = [];
+  await runCli(['module', 'reminders', '--cwd', application], (line) => { lines.push(line); });
+  const hint = lines.join('\n');
+  assert.match(hint, /system\.start\(definition, inputs\)/);
+  assert.match(hint, /from\(handle, 'key'\) or from\(handle\): a capability exported by a module/);
+  assert.match(hint, /external\(value\): configuration or any value no module provides/);
+  assert.match(hint, /system\.start\(remindersModule, \{ repository: from\(storage, 'repository'\), limit: external\(20\) \}\)/);
+  assert.ok(!hint.includes(' | '), 'The hint must not show a union of expressions as code.');
 });
 
 test('module creation cannot traverse a linked modules directory', async (t) => {

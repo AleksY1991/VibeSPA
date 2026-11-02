@@ -1,7 +1,7 @@
 import type { Readable, Scope } from '@vibespa/contracts';
 import {
   createRxDatabase, fillObjectDataBeforeInsert, rxStorageWriteErrorToRxError,
-  type BulkWriteRow, type MangoQuery, type RxCollection, type RxDocumentData,
+  type BulkWriteRow, type MangoQuery, type RxCollection, type RxDocument, type RxDocumentData,
   type RxJsonSchema, type RxQuery,
 } from 'rxdb';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
@@ -247,6 +247,34 @@ export async function createLocalStore<Rows extends RowMap<Rows>>(
     }
   });
 
+  // Projection memoization over RxDB's own identities, not a second writable entity
+  // store. RxDB's document cache returns one RxDocument instance per document
+  // revision, and a query keeps one result object until its result set changes.
+  // Each frozen read-only projection is created once for such an object and is
+  // released with it.
+  const documentViews = new WeakMap<RxDocument<Row>, Readonly<Row>>();
+  const resultViews = new WeakMap<object, readonly Readonly<Row>[]>();
+  const noRows: readonly Readonly<Row>[] = Object.freeze([]);
+  const viewOf = (document: RxDocument<Row>): Readonly<Row> => {
+    let view = documentViews.get(document);
+    if (!view) {
+      // toJSON() shares nested objects with RxDB's internal data; clone before freezing.
+      view = immutable(structuredClone(document.toJSON() as Row));
+      documentViews.set(document, view);
+    }
+    return view;
+  };
+  const rowsOf = (query: RxQuery<Row>): readonly Readonly<Row>[] => {
+    const result = query._result;
+    if (!result) return noRows;
+    let rows = resultViews.get(result);
+    if (!rows) {
+      rows = Object.freeze(result.documents.map(viewOf));
+      resultViews.set(result, rows);
+    }
+    return rows;
+  };
+
   const makeQuerySource = async <T>(query: RxQuery<Row>, read: () => T, scope: Scope): Promise<Readable<T>> => {
     assertOpen();
     scope.signal.throwIfAborted();
@@ -254,9 +282,18 @@ export async function createLocalStore<Rows extends RowMap<Rows>>(
     assertOpen();
     scope.signal.throwIfAborted();
     const listeners = new Set<(value: T) => void>();
+    // The last value published to subscribers. Only RxDB emissions advance it;
+    // a public read() never does, so it cannot suppress a notification still owed.
+    let lastPublished = read();
     // Keep the native query current; read() uses RxDB's cache, not a second store.
+    // RxDB replays its current result to a new subscription, and read() returns the
+    // same projection for an unchanged result, so only a new value is announced.
     const subscription = query.$.subscribe(() => {
-      if (!scope.signal.aborted && !closed) announce(listeners, read());
+      if (scope.signal.aborted || closed) return;
+      const next = read();
+      if (next === lastPublished) return;
+      lastPublished = next;
+      announce(listeners, next);
     });
     queries.set(query, (queries.get(query) ?? 0) + 1);
     let stopped = false;
@@ -319,13 +356,13 @@ export async function createLocalStore<Rows extends RowMap<Rows>>(
   const store: LocalStore<Rows> = Object.freeze({
     query: async <Name extends Extract<keyof Rows, string>>(name: Name, mango?: MangoQuery<Rows[Name]>, scope = options.scope) => {
       const query = collectionOf(name).find((mango ?? {}) as MangoQuery<Row>);
-      return makeQuerySource(query, () => (query._result?.documents ?? []).map(doc => immutable(structuredClone(doc.toJSON())) as Readonly<Rows[Name]>), scope);
+      return makeQuerySource(query, () => rowsOf(query) as readonly Readonly<Rows[Name]>[], scope);
     },
     document: async <Name extends Extract<keyof Rows, string>>(name: Name, id: string, scope = options.scope) => {
       const query = collectionOf(name).findOne(id);
       return makeQuerySource(query, () => {
         const document = query._result?.documents[0];
-        return document ? immutable(structuredClone(document.toJSON())) as Readonly<Rows[Name]> : null;
+        return document ? viewOf(document) as Readonly<Rows[Name]> : null;
       }, scope);
     },
     batch: (command: BatchCommand<Rows>) => {

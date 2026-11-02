@@ -149,6 +149,9 @@ importers:
       '@vibespa/core':
         specifier: workspace:*
         version: link:../core
+      '@vibespa/solid':
+        specifier: workspace:*
+        version: link:../solid
       fake-indexeddb:
         specifier: ^6.2.4
         version: 6.2.5
@@ -167,6 +170,9 @@ importers:
       '@vibespa/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@vibespa/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/supabase:
     dependencies:

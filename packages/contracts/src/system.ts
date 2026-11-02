@@ -1,6 +1,9 @@
+import type { DataNodeSnapshot } from './data.js';
+
 /** A finite vocabulary for module responsibilities and their presentation. */
 export enum FeatureType {
   Policy = 'policy',
+  Data = 'data',
   Store = 'store',
   Feature = 'feature',
   Service = 'service',
@@ -66,4 +69,6 @@ export interface SystemSnapshot {
   readonly modules: readonly ModuleSnapshot[];
   readonly events: readonly SystemEvent[];
   readonly droppedEvents: number;
+  /** Validated data definitions and bindings; contains no record values. */
+  readonly data?: readonly DataNodeSnapshot[];
 }

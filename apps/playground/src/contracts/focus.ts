@@ -1,4 +1,4 @@
-import type { Readable } from '@vibespa/contracts';
+import type { Accessor } from 'solid-js';
 
 export interface Intention {
   readonly id: string;
@@ -9,6 +9,12 @@ export interface Intention {
 export interface HistoryState {
   readonly canUndo: boolean;
   readonly canRedo: boolean;
+}
+
+export interface DeliveryState {
+  readonly phase: 'memory' | 'loading' | 'saving' | 'idle' | 'failed' | 'closed';
+  readonly pending: number;
+  readonly error: string | null;
 }
 
 export type CommandResult =
@@ -22,11 +28,15 @@ export interface FocusCommands {
   completePending(): Promise<CommandResult>;
   undo(): Promise<CommandResult>;
   redo(): Promise<CommandResult>;
+  retry(): Promise<CommandResult>;
+  keepLocal(): Promise<CommandResult>;
 }
 
 export interface FocusView {
-  readonly pending: Readable<readonly Readonly<Intention>[]>;
-  readonly completed: Readable<readonly Readonly<Intention>[]>;
-  readonly history: Readable<HistoryState>;
+  /** Tracked reads: call them inside JSX or a Solid computation. */
+  readonly pending: Accessor<readonly Readonly<Intention>[]>;
+  readonly completed: Accessor<readonly Readonly<Intention>[]>;
+  readonly history: Accessor<HistoryState>;
+  readonly delivery: Accessor<DeliveryState>;
   readonly commands: FocusCommands;
 }

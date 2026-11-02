@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import test from 'node:test';
-import { exportAdapters } from '../../../scripts/export-adapters.mjs';
+import { exportAdapters, exportApplicationPackages } from '../../../scripts/export-adapters.mjs';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'vibespa-export-test-'));
@@ -120,4 +120,42 @@ test('missing compiled contracts also fail before creating output', async t => {
   const destination = join(directory, 'artifacts');
   await assert.rejects(exportAdapters({ root, destination }), /@vibespa\/contracts needs compiled exports/);
   await assert.rejects(readdir(destination), { code: 'ENOENT' });
+});
+
+test('application archives ship one unbundled package each, resolving only shipped files', async t => {
+  const { root, directory, write } = await fixture(t);
+  await write('packages/core/package.json', {
+    name: '@vibespa/core', version: '0.1.0', type: 'module', files: ['dist', 'src'],
+    exports: { '.': { types: './dist/index.d.ts', development: './src/index.ts', import: './dist/index.js' }, './package.json': './package.json' },
+    dependencies: { '@vibespa/contracts': 'workspace:*' },
+  });
+  await write('packages/core/src/index.ts', "export { sharedValue } from '@vibespa/contracts';\n");
+  await write('packages/core/dist/index.js', "export { sharedValue } from '@vibespa/contracts';\n");
+  await write('packages/core/dist/index.d.ts', "export { sharedValue } from '@vibespa/contracts';\n");
+  await write('packages/core/test/core.test.ts', 'not shipped\n');
+  await write('packages/eslint-plugin/package.json', {
+    name: '@vibespa/eslint-plugin', version: '0.1.0', type: 'module', files: ['src'],
+    exports: { '.': { types: './src/index.d.ts', default: './src/index.js' } }, peerDependencies: { eslint: '>=9' },
+  });
+  await write('packages/eslint-plugin/src/index.js', 'export default {};\n');
+  await write('packages/eslint-plugin/src/index.d.ts', 'export {};\n');
+  await write('packages/eslint-plugin/tests/rules.test.js', 'not shipped\n');
+  const exported = await exportApplicationPackages({ root, destination: join(directory, 'vendor') });
+  assert.deepEqual(exported.map(item => item.package),
+    ['@vibespa/contracts', '@vibespa/core', '@vibespa/solid', '@vibespa/local-first', '@vibespa/eslint-plugin']);
+  const archives = new Map(await Promise.all(exported.map(async item => [item.package, archiveFiles(await readFile(item.path))])));
+  const core = archives.get('@vibespa/core');
+  const manifest = JSON.parse(core.get('package/package.json'));
+  assert.deepEqual(manifest.exports['.'], { types: './dist/index.d.ts', import: './dist/index.js' });
+  assert.deepEqual(manifest.files, ['dist']);
+  assert.equal(manifest.dependencies['@vibespa/contracts'], '0.1.0');
+  assert.equal(manifest.bundledDependencies, undefined);
+  assert.deepEqual([...core.keys()].filter(name => !name.startsWith('package/dist/')).sort(),
+    ['package/LICENSE', 'package/package.json']);
+  const plugin = archives.get('@vibespa/eslint-plugin');
+  assert.deepEqual([...plugin.keys()].sort(),
+    ['package/LICENSE', 'package/package.json', 'package/src/index.d.ts', 'package/src/index.js']);
+  for (const files of archives.values()) {
+    assert.ok(![...files.keys()].some(name => name.includes('/node_modules/')), 'No bundled dependency copies');
+  }
 });

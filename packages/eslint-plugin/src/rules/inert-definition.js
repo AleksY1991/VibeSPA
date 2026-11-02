@@ -1,8 +1,8 @@
 import { commonProperties, paths, sourceValue } from '../paths.js';
 
 const functionTypes = new Set(['ArrowFunctionExpression', 'FunctionExpression', 'FunctionDeclaration']);
-const featureTypes = new Set(['Policy', 'Store', 'Feature', 'Service', 'View']);
-const coreImports = new Set(['@vibespa/core', '@vibespa/core/module']);
+const featureTypes = new Set(['Policy', 'Data', 'Store', 'Feature', 'Service', 'View']);
+const coreImports = new Set(['@vibespa/core', '@vibespa/core/module', '@vibespa/core/data']);
 
 export default {
   meta: {
@@ -24,7 +24,7 @@ export default {
     const options = context.options[0] ?? {};
     const location = paths(context, options);
     if (!/(?:^|\/)definition\.[cm]?[jt]s$/.test(location.filename)) return {};
-    const factories = new Set(options.declarationFactories ?? ['defineModule', 'defineFeature', 'defineFeatureModule']);
+    const factories = new Set(options.declarationFactories ?? ['defineModule', 'defineFeature', 'defineFeatureModule', 'defineDataContract', 'dataPort']);
     const metadataImports = new Set(options.definitionImports ?? []);
     const factoryLocals = new Set();
     const featureTypeLocals = new Set();
@@ -56,7 +56,13 @@ export default {
           }
           return;
         }
-        if (!metadataImports.has(source) || node.specifiers.length === 0) report(node);
+        // Public contracts and other inert definitions carry canonical data
+        // references. They may be imported by name; runtime internals stay lazy.
+        const publicMetadata = typeof source === 'string' && source.startsWith('.')
+          && /(?:^|\/)(?:contract|definition)(?:\.[cm]?[jt]s)?$/.test(source)
+          && !/(?:^|\/)internal(?:\/|$)/.test(location.resolve(source))
+          && node.specifiers.every(item => item.type === 'ImportSpecifier');
+        if ((!metadataImports.has(source) && !publicMetadata) || node.specifiers.length === 0) report(node);
       },
       ExportNamedDeclaration(node) { if (node.source && node.exportKind !== 'type') report(node); },
       ExportAllDeclaration(node) { if (node.exportKind !== 'type') report(node); },

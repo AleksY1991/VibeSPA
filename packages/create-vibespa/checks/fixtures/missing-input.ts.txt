@@ -1,0 +1,7 @@
+import { createScope, createSystem, startModule } from '@vibespa/core';
+import { startModule as startSmallModule } from '@vibespa/core/module';
+import { greeting, smallGreeting } from './greeting.js';
+
+await startModule(greeting, {}, createScope()); // @diagnostic 2345 prefix
+await startSmallModule(smallGreeting, {}, createScope()); // @diagnostic 2345 prefix
+await createSystem({ id: 'consumer' }).start(greeting, {}); // @diagnostic 2345 prefix

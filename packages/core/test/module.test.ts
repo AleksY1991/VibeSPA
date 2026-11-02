@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defineModule, startModule } from '../src/module.js';
+import type { ModuleContext, ModuleRuntimeFactory } from '../src/module.js';
 import { createScope } from '../src/scope.js';
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>(accept => { resolve = accept; });
+  return { promise, resolve };
+}
 
 describe('module composition', () => {
   it('leaves declarations inert and passes typed dependencies explicitly', async () => {
@@ -105,15 +112,180 @@ describe('module composition', () => {
     expect(cleanup).toHaveBeenCalledOnce();
   });
 
-  it('retains both startup and rollback errors', async () => {
+  it('retains startup and rollback errors through parent disposal without retrying cleanup', async () => {
     const owner = createScope();
+    const close = vi.fn(() => { throw new Error('cleanup failed'); });
     const definition = defineModule({ id: 'broken', load: async () => (_: undefined, scope: ReturnType<typeof createScope>) => {
-      scope.defer(() => { throw new Error('cleanup failed'); });
+      scope.defer(close);
       throw new Error('startup failed');
     } });
     await expect(startModule(definition, undefined, owner)).rejects.toMatchObject({
       errors: [expect.objectContaining({ message: 'startup failed' }), expect.any(AggregateError)],
     });
+    await expect(owner.dispose()).rejects.toMatchObject({
+      errors: [expect.objectContaining({ errors: [expect.any(AggregateError)] })],
+    });
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('enters the runtime during construction and explicit continuations, then closes it before resources', async () => {
+    const owner = createScope();
+    const events: string[] = [];
+    let entered = false;
+    const definition = defineModule({ id: 'owned', load: async () => async (_: undefined, scope: ModuleContext) => {
+      expect(entered).toBe(true);
+      scope.defer(() => { events.push('resource'); });
+      await Promise.resolve();
+      expect(entered).toBe(false);
+      scope.run(() => { expect(entered).toBe(true); });
+      return scope;
+    } });
+    const scope = await startModule(definition, undefined, owner, undefined, {
+      createRuntime: () => ({
+        run(operation) {
+          const previous = entered;
+          entered = true;
+          try { return operation(); } finally { entered = previous; }
+        },
+        quiesce() { events.push('quiesce'); },
+        dispose() { events.push('runtime'); return []; },
+      }),
+    });
+    await scope.dispose();
+    expect(events).toEqual(['quiesce', 'runtime', 'resource']);
+    expect(() => scope.run(() => {})).toThrow();
     await owner.dispose();
+    expect(events).toEqual(['quiesce', 'runtime', 'resource']);
+  });
+
+  it('joins tasks and registers a resource arriving after cancellation before disposing it', async () => {
+    const owner = createScope();
+    const arrival = deferred<{ id: string }>();
+    const close = vi.fn();
+    const definition = defineModule({ id: 'acquisition', load: async () => (_: undefined, scope: ModuleContext) => scope });
+    const scope = await startModule(definition, undefined, owner);
+    const acquisition = scope.acquire(() => arrival.promise, close);
+    const cancelled = expect(acquisition).rejects.toMatchObject({ name: 'AbortError' });
+    let disposed = false;
+    const disposal = owner.dispose().then(() => { disposed = true; });
+    await Promise.resolve();
+    expect(disposed).toBe(false);
+    const refused = vi.fn();
+    await expect(scope.task(refused)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(refused).not.toHaveBeenCalled();
+    arrival.resolve({ id: 'late' });
+    await cancelled;
+    await disposal;
+    expect(close).toHaveBeenCalledExactlyOnceWith({ id: 'late' });
+  });
+
+  it('keeps cleanup registration open until a task requesting shutdown settles', async () => {
+    const owner = createScope();
+    const finish = deferred<void>();
+    const close = vi.fn();
+    const definition = defineModule({ id: 'tasks', load: async () => (_: undefined, scope: ModuleContext) => scope });
+    const scope = await startModule(definition, undefined, owner);
+    let disposal!: Promise<void>;
+    const task = scope.task(async () => {
+      disposal = owner.dispose();
+      await finish.promise;
+      scope.defer(close);
+      return 'finished';
+    });
+    expect(scope.signal.aborted).toBe(true);
+    await Promise.resolve();
+    expect(close).not.toHaveBeenCalled();
+    finish.resolve();
+    await expect(task).resolves.toBe('finished');
+    await disposal;
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('drains resources after managed runtime failures and retains every cleanup error', async () => {
+    const owner = createScope();
+    const close = vi.fn(() => { throw new Error('resource failed'); });
+    const definition = defineModule({ id: 'managed-failure', load: async () => (_: undefined, scope: ModuleContext) => {
+      scope.defer(close);
+      return {};
+    } });
+    await startModule(definition, undefined, owner, undefined, {
+      createRuntime: () => ({
+        run: operation => operation(),
+        quiesce() { throw new Error('quiesce failed'); },
+        dispose: () => [new Error('reactive cleanup failed')],
+      }),
+    });
+    await expect(owner.dispose()).rejects.toMatchObject({
+      errors: [expect.objectContaining({ errors: [
+        expect.objectContaining({ message: 'quiesce failed' }),
+        expect.objectContaining({ message: 'reactive cleanup failed' }),
+        expect.any(AggregateError),
+      ] })],
+    });
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('retains resources when runtime disposal throws before traversal completes', async () => {
+    const owner = createScope();
+    const close = vi.fn();
+    const states: string[] = [];
+    const definition = defineModule({ id: 'unsafe', load: async () => (_: undefined, scope: ModuleContext) => {
+      scope.defer(close);
+      return {};
+    } });
+    await startModule(definition, undefined, owner, state => { states.push(state); }, {
+      createRuntime: () => ({
+        run: operation => operation(),
+        quiesce() {},
+        dispose() { throw new Error('traversal interrupted'); },
+      }),
+    });
+    await expect(owner.dispose()).rejects.toBeInstanceOf(AggregateError);
+    expect(close).not.toHaveBeenCalled();
+    expect(states.at(-1)).toBe('failed');
+    expect(states).not.toContain('disposed');
+  });
+
+  it('keeps unsafe failed startup owned so parent disposal cannot claim successful release', async () => {
+    const owner = createScope();
+    const close = vi.fn();
+    const definition = defineModule({ id: 'unsafe-startup', load: async () => (_: undefined, scope: ModuleContext) => {
+      scope.defer(close);
+      throw new Error('construction failed');
+    } });
+    await expect(startModule(definition, undefined, owner, undefined, {
+      createRuntime: () => ({
+        run: operation => operation(),
+        quiesce() {},
+        dispose() { throw new Error('traversal interrupted'); },
+      }),
+    })).rejects.toBeInstanceOf(AggregateError);
+    await expect(owner.dispose()).rejects.toBeInstanceOf(AggregateError);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('rolls back runtime factory acquisition and preserves entry and cleanup failures', async () => {
+    const owner = createScope();
+    const close = vi.fn();
+    const definition = defineModule({ id: 'constructor', load: async () => () => ({}) });
+    const createRuntime: ModuleRuntimeFactory = scope => {
+      scope.defer(close);
+      throw new Error('runtime factory failed');
+    };
+    await expect(startModule(definition, undefined, owner, undefined, { createRuntime }))
+      .rejects.toThrow('runtime factory failed');
+    expect(close).toHaveBeenCalledOnce();
+
+    const enter = new Error('runtime entry failed');
+    await expect(startModule(definition, undefined, owner, undefined, {
+      createRuntime: () => ({
+        run() { throw enter; },
+        quiesce() {},
+        dispose: () => [new Error('runtime cleanup failed')],
+      }),
+    })).rejects.toMatchObject({ errors: [enter, expect.any(AggregateError)] });
+    await expect(owner.dispose()).rejects.toMatchObject({
+      errors: [expect.objectContaining({ errors: [expect.objectContaining({ message: 'runtime cleanup failed' })] })],
+    });
   });
 });

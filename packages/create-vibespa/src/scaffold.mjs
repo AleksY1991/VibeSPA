@@ -1,16 +1,15 @@
 import { constants } from 'node:fs';
-import { copyFile, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { copyFile, lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const packageRoot = fileURLToPath(new URL('../', import.meta.url));
-const rootFiles = [
-  'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'tsconfig.base.json',
-  'tsconfig.json', 'vitest.config.ts', 'eslint.config.js', '.gitignore',
-  'CLAUDE.md', 'AGENTS.md', 'LICENSE',
+// Required in every application template (scripts/prepare-template.mjs composes it).
+const requiredFiles = [
+  'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'tsconfig.json', 'eslint.config.js',
+  'vitest.config.ts', 'vite.config.ts', 'index.html', join('src', 'main.ts'), join('test-support', 'solid-diagnostics.ts'),
 ];
-const frameworkPackages = ['contracts', 'core', 'solid', 'local-first', 'supabase', 'settings', 'interaction', 'eslint-plugin'];
-const excluded = new Set(['node_modules', '.git', '.cache', '.vite', 'coverage', '.turbo']);
+const excluded = new Set(['node_modules', '.git', '.cache', '.vite', 'coverage', '.turbo', 'dist', '.npmignore']);
 
 async function statIfPresent(path) {
   try { return await lstat(path); }
@@ -53,10 +52,9 @@ function childPath(root, path) {
   return result;
 }
 
-async function collectDirectory(root, path, files, { omitDist = false } = {}) {
+async function collectDirectory(root, path, files) {
   const source = childPath(root, path);
-  const status = await statIfPresent(source);
-  if (!status) return;
+  const status = await lstat(source);
   if (status.isSymbolicLink()) throw new Error(`Template contains a symbolic link: ${source}`);
   if (status.isFile()) {
     files.push(path);
@@ -66,57 +64,40 @@ async function collectDirectory(root, path, files, { omitDist = false } = {}) {
   const entries = await readdir(source, { withFileTypes: true });
   entries.sort((left, right) => left.name.localeCompare(right.name));
   for (const entry of entries) {
-    if (excluded.has(entry.name) || (omitDist && entry.name === 'dist')) continue;
-    await collectDirectory(root, join(path, entry.name), files, { omitDist });
+    if (!excluded.has(entry.name)) await collectDirectory(root, path ? join(path, entry.name) : entry.name, files);
   }
 }
 
-/** Source snapshots contain the framework and its example, without CLI recursion. */
+/** An application template: application code, configuration and pinned framework archives. */
 export async function collectTemplateFiles(templateRoot) {
   const root = resolve(templateRoot);
   await assertNoSymlink(root);
   const files = [];
-  for (const name of rootFiles) await collectDirectory(root, name, files);
-  // Package managers omit .gitignore from tarballs. Prepared seeds retain it
-  // under a plain asset name and restore it when creating an application.
-  if (!files.includes('.gitignore')) await collectDirectory(root, '_gitignore', files);
-  for (const name of frameworkPackages) await collectDirectory(root, join('packages', name), files);
-  await collectDirectory(root, join('apps', 'playground'), files, { omitDist: true });
-  await collectDirectory(root, 'scripts', files, { omitDist: true });
-  const result = files.filter((path) => basename(path) !== 'prepare-template.mjs');
-  for (const required of ['package.json', 'pnpm-workspace.yaml', join('packages', 'core', 'package.json'), join('apps', 'playground', 'package.json')]) {
-    if (!result.includes(required)) throw new Error(`Incomplete VibeSPA template: missing ${required}`);
+  await collectDirectory(root, '', files);
+  // Package managers omit .gitignore from tarballs; templates carry it as _gitignore.
+  for (const required of [...requiredFiles, '_gitignore']) {
+    if (!files.includes(required)) throw new Error(`Incomplete VibeSPA template: missing ${required}`);
   }
-  const manifestPaths = result.filter((path) => path === 'package.json'
-    || /^(?:packages[/\\][^/\\]+|apps[/\\]playground)[/\\]package\.json$/.test(path));
-  const manifests = await Promise.all(manifestPaths.map(async (path) => JSON.parse(await readFile(childPath(root, path), 'utf8'))));
-  const names = new Set(manifests.map((manifest) => manifest.name));
-  for (const manifest of manifests) {
-    const dependencies = { ...manifest.dependencies, ...manifest.devDependencies, ...manifest.optionalDependencies, ...manifest.peerDependencies };
-    for (const [name, version] of Object.entries(dependencies)) {
-      if (typeof version === 'string' && version.startsWith('workspace:') && !names.has(name)) {
-        throw new Error(`Incomplete VibeSPA template: ${manifest.name} needs missing workspace package ${name}.`);
-      }
-    }
+  // Every framework dependency is a pinned archive inside the template.
+  const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+  const workspace = await readFile(join(root, 'pnpm-workspace.yaml'), 'utf8');
+  const references = [
+    ...Object.values({ ...manifest.dependencies, ...manifest.devDependencies }),
+    ...Array.from(workspace.matchAll(/(?:file|link|workspace):[^\s'"]*/g), match => match[0]),
+  ];
+  for (const reference of references) {
+    if (/^(?:link|workspace):/.test(reference)) throw new Error(`Template dependency is not portable: ${reference}`);
+    if (!reference.startsWith('file:')) continue;
+    const match = reference.match(/^file:\.\/vendor\/([\w.@-]+\.tgz)$/);
+    if (!match || !files.includes(join('vendor', match[1]))) throw new Error(`Template dependency archive is missing: ${reference}`);
   }
-  return result;
+  return files;
 }
 
 function standaloneManifest(contents, name) {
   const manifest = JSON.parse(contents);
   manifest.name = name;
   manifest.private = true;
-  if (manifest.scripts) {
-    for (const [key, value] of Object.entries(manifest.scripts)) {
-      if (typeof value !== 'string') continue;
-      if (!value.includes('create-vibespa') && !value.includes('prepare-template')) continue;
-      const script = value.split(/\s*&&\s*/)
-        .filter((part) => !part.includes('create-vibespa') && !part.includes('prepare-template'))
-        .join(' && ');
-      if (script.trim() === '') delete manifest.scripts[key];
-      else manifest.scripts[key] = script;
-    }
-  }
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
@@ -156,28 +137,12 @@ export async function createApplication({ destination, name, templateRoot }) {
 }
 
 export async function resolveTemplateRoot(cliPackageRoot = packageRoot) {
-  const cliRoot = resolve(cliPackageRoot);
-  const workspace = resolve(cliRoot, '..', '..');
-  const expectedSourcePackage = join(workspace, 'packages', 'create-vibespa');
-  if (cliRoot === expectedSourcePackage) {
-    try {
-      const manifest = JSON.parse(await readFile(join(workspace, 'package.json'), 'utf8'));
-      const cli = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8'));
-      const core = JSON.parse(await readFile(join(workspace, 'packages', 'core', 'package.json'), 'utf8'));
-      if (manifest.name === 'vibespa' && cli.name === 'create-vibespa' && core.name === '@vibespa/core') {
-        await collectTemplateFiles(workspace);
-        return realpath(workspace);
-      }
-    } catch {
-      // A partial or unrelated checkout must never replace the packaged seed.
-    }
-  }
-  const embedded = join(cliRoot, 'template');
+  const embedded = join(resolve(cliPackageRoot), 'template');
   if ((await statIfPresent(join(embedded, 'package.json')))?.isFile()) {
     await collectTemplateFiles(embedded);
     return embedded;
   }
-  throw new Error('This create-vibespa package has no template. Build and pack it from the VibeSPA workspace first.');
+  throw new Error('This create-vibespa package has no application template. In the VibeSPA checkout, run pnpm build first.');
 }
 
 function moduleFiles(name) {
@@ -185,9 +150,9 @@ function moduleFiles(name) {
   const camel = pascal[0].toLowerCase() + pascal.slice(1);
   const title = name.split('-').map((part) => part[0].toUpperCase() + part.slice(1)).join(' ');
   return {
-    'contract.ts': `import type { Readable } from '@vibespa/contracts';\n\nexport interface ${pascal}Inputs {\n  readonly message: string;\n}\n\nexport interface ${pascal}Exports {\n  readonly message: Readable<string>;\n}\n`,
-    'definition.ts': `import { FeatureType } from '@vibespa/contracts';\nimport { defineFeatureModule } from '@vibespa/core';\nimport type { ${pascal}Exports, ${pascal}Inputs } from './contract.js';\n\nexport const ${camel}Module = defineFeatureModule<FeatureType.Feature, ${pascal}Inputs, ${pascal}Exports>({\n  id: '${name}',\n  kind: FeatureType.Feature,\n  title: '${title}',\n  description: 'Provides the ${name} message capability.',\n  contract: {\n    inputs: { message: 'The initial message supplied by the owning composition.' },\n    exports: { message: 'Read the current message and subscribe to subsequent changes.' },\n  },\n  load: () => import('./internal/runtime.js').then((module) => module.create${pascal}),\n});\n`,
-    'internal/runtime.ts': `import { constantReadable } from '@vibespa/core';\nimport type { ${pascal}Exports, ${pascal}Inputs } from '../contract.js';\n\nexport function create${pascal}(inputs: ${pascal}Inputs): ${pascal}Exports {\n  return { message: constantReadable(inputs.message) };\n}\n`,
+    'contract.ts': `import type { Accessor } from 'solid-js';\n\nexport interface ${pascal}Inputs {\n  readonly message: string;\n}\n\nexport interface ${pascal}Exports {\n  /** A tracked read: call it inside JSX or a Solid computation. */\n  readonly message: Accessor<string>;\n}\n`,
+    'definition.ts': `import { FeatureType } from '@vibespa/contracts';\nimport { defineFeatureModule } from '@vibespa/core';\nimport type { ${pascal}Exports, ${pascal}Inputs } from './contract.js';\n\nexport const ${camel}Module = defineFeatureModule<FeatureType.Feature, ${pascal}Inputs, ${pascal}Exports>({\n  id: '${name}',\n  kind: FeatureType.Feature,\n  title: '${title}',\n  description: 'Provides the ${name} message capability.',\n  contract: {\n    inputs: { message: 'The initial message supplied by the owning composition.' },\n    exports: { message: 'A tracked accessor for the current message.' },\n  },\n  load: () => import('./internal/runtime.js').then((module) => module.create${pascal}),\n});\n`,
+    'internal/runtime.ts': `import { createSignal } from 'solid-js';\nimport type { ModuleContext } from '@vibespa/core/module';\nimport type { ${pascal}Exports, ${pascal}Inputs } from '../contract.js';\n\nexport function create${pascal}(inputs: ${pascal}Inputs, _scope: ModuleContext): ${pascal}Exports {\n  // This synchronous factory body runs inside the module's Solid owner, so signals\n  // and memos created here are released with the module. Ownership is not ambient\n  // elsewhere: after an await, in timers, promise callbacks or non-Solid\n  // subscriptions, create reactive work inside _scope.run. Expose a neutral\n  // Readable with moduleAccessor(_scope, readable) from '@vibespa/solid/module'.\n  // Declare public commands once with _scope.commands({ ... }) and export the\n  // returned group. Use _scope.task for background work. Own resources with\n  // _scope.acquire or register their cleanup with _scope.defer.\n  const [message] = createSignal(inputs.message);\n  return { message };\n}\n`,
   };
 }
 

@@ -1,0 +1,30 @@
+import { defineFeatureModule, FeatureType } from '@vibespa/core';
+import { defineModule } from '@vibespa/core/module';
+
+export interface GreetingInputs {
+  readonly prefix: string;
+  readonly maximumLength?: number;
+}
+
+export interface GreetingExports {
+  greet(name: string): string;
+}
+
+export function createGreeting(inputs: GreetingInputs): GreetingExports {
+  return { greet: name => `${inputs.prefix}, ${name}`.slice(0, inputs.maximumLength) };
+}
+
+// Infer the boundary from the factory, as in ordinary consumer definitions.
+export const greeting = defineFeatureModule({
+  id: 'greeting',
+  kind: FeatureType.Policy,
+  title: 'Greeting policy',
+  description: 'Formats a greeting.',
+  contract: {
+    inputs: { prefix: 'Required prefix.', maximumLength: 'Optional limit.' },
+    exports: { greet: 'Format a greeting.' },
+  },
+  load: async () => createGreeting,
+});
+
+export const smallGreeting = defineModule({ id: 'small-greeting', load: async () => createGreeting });

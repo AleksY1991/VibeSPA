@@ -55,6 +55,10 @@ tester.run('no-private-imports', plugin.rules['no-private-imports'], {
 tester.run('ui-boundary', plugin.rules['ui-boundary'], {
   valid: [
     { filename: moduleFile, options: [root], code: "import { createSignal } from 'solid-js'; const [count] = createSignal(0);" },
+    { filename: moduleFile, options: [root], code: "import { createModuleEffect, onModuleCleanup } from '@vibespa/solid/module';" },
+    { filename: moduleFile, options: [root], code: "export { onModuleCleanup } from '@vibespa/solid/module';" },
+    { filename: moduleFile, options: [root], code: "const lifecycle = import('@vibespa/solid/module');" },
+    { filename: '/repo/src/business/tasks.ts', options: [{ ...root, domainRoots: ['src/business'] }], code: "import { createModuleEffect } from '@vibespa/solid/module';" },
     { filename: moduleFile, options: [root], code: 'const store = { batch() {} }; store.batch();' },
     { filename: uiFile, options: [root], code: "import type { TaskView } from '@vibespa/contracts'; import { observe } from '@vibespa/solid';" },
     { filename: uiFile, options: [root], code: "import { Button } from './controls/button'; import type { TaskView } from '../contracts/tasks';" },
@@ -65,6 +69,11 @@ tester.run('ui-boundary', plugin.rules['ui-boundary'], {
     { filename: '/repo/packages/interaction/src/browser.ts', options: [{ ...root, domainRoots: ['packages/interaction/src'], uiAdapters: ['packages/interaction/src/browser.ts'] }], code: 'document.addEventListener("keydown", () => {});' },
   ],
   invalid: [
+    ...['@vibespa/solid', '@vibespa/solid/readable', '@vibespa/solid/rxdb', '@vibespa/solid/rxdb-batch', '@vibespa/solid/module/internal', '@vibespa/solid/modules'].map(source => ({
+      filename: moduleFile, options: [root], code: `import { adapter } from '${source}';`, errors: [presentationError],
+    })),
+    { filename: '/repo/packages/contracts/src/tasks.ts', options: [root], code: "import { onModuleCleanup } from '@vibespa/solid/module';", errors: [presentationError] },
+    { filename: moduleFile, options: [{ ...root, uiRoots: ['packages/solid/src'] }], code: "import { createModuleEffect } from '@vibespa/solid/module';", errors: [presentationError] },
     { filename: moduleFile.replace(/\.ts$/, '.tsx'), options: [root], code: 'const view = <div />;', errors: [presentationError] },
     { filename: moduleFile.replace(/\.ts$/, '.tsx'), options: [root], code: 'const view = <>text</>;', errors: [presentationError] },
     { filename: moduleFile, options: [root], code: "import './tasks.css';", errors: [presentationError] },
@@ -94,6 +103,8 @@ tester.run('ui-boundary', plugin.rules['ui-boundary'], {
 
 tester.run('inert-definition', plugin.rules['inert-definition'], {
   valid: [
+    { filename: definitionFile, options: [root], code: "import { FeatureType, defineFeatureModule, dataPort } from '@vibespa/core'; import { tasksData } from './contract'; export const tasks = defineFeatureModule({ id: 'tasks', kind: FeatureType.Data, data: { provides: { tasks: dataPort(tasksData, ['read']) } }, load: () => import('./internal/runtime') });" },
+    { filename: definitionFile, options: [root], code: "import { FeatureType, defineFeatureModule, dataPort } from '@vibespa/core'; import { tasksData } from '../tasks/definition'; export const board = defineFeatureModule({ id: 'board', kind: FeatureType.Feature, data: { requires: { tasks: dataPort(tasksData, ['read']) } }, load: () => import('./internal/runtime') });" },
     { filename: definitionFile, options: [root], code: "import type { ModuleDefinition } from '@vibespa/core'; export const definition = { id: 'tasks', load: () => import('./internal/runtime') } satisfies ModuleDefinition;" },
     { filename: definitionFile, options: [root], code: "import { defineModule as declare } from '@vibespa/core'; export default declare({ id: 'tasks', load: () => import('./internal/runtime').then(m => m.create()) });" },
     { filename: definitionFile, options: [root], code: "import { defineModule } from '@vibespa/core/module'; export default defineModule({ id: 'tasks', load: () => import('./internal/runtime') });" },
@@ -114,6 +125,9 @@ tester.run('inert-definition', plugin.rules['inert-definition'], {
   invalid: [
     { filename: definitionFile, options: [root], code: "import './side-effect';", errors: [inertError] },
     { filename: definitionFile, options: [root], code: "import { createStore } from './internal/store';", errors: [inertError] },
+    { filename: definitionFile, options: [root], code: "import { data } from './internal/contract';", errors: [inertError] },
+    { filename: definitionFile, options: [root], code: "import { data } from './internal/definition';", errors: [inertError] },
+    { filename: definitionFile, options: [root], code: "import { data } from './internal/nested/../contract.js';", errors: [inertError] },
     { filename: definitionFile, options: [root], code: "import { createScope } from '@vibespa/core';", errors: [inertError] },
     { filename: definitionFile, options: [root], code: "import { FeatureType, createScope } from '@vibespa/core';", errors: [inertError] },
     { filename: definitionFile, options: [root], code: "import { FeatureType, createSource } from '@vibespa/contracts';", errors: [inertError] },

@@ -1,18 +1,17 @@
 /** @jsxImportSource @solidjs/web */
-import type { Readable } from '@vibespa/contracts';
-import { consumeReadable } from '@vibespa/solid';
-import { For, untrack } from 'solid-js';
+import { For } from 'solid-js';
+import type { Accessor } from 'solid-js';
 import type { Intention } from '../contracts/focus';
 import { Icon } from './Icons';
 
 export function IntentionList(props: {
-  readonly source: Readable<readonly Readonly<Intention>[]>;
+  readonly source: Accessor<readonly Readonly<Intention>[]>;
   readonly completed: boolean;
   readonly busy: boolean;
   readonly toggle: (id: string) => void;
   readonly remove: (id: string) => void;
 }) {
-  const items = consumeReadable(untrack(() => props.source));
+  const items = () => props.source();
 
   return (
     <section class="intention-section" aria-labelledby={props.completed ? 'completed-heading' : 'pending-heading'}>

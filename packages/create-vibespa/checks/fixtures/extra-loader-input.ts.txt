@@ -1,0 +1,11 @@
+import type { ModuleDefinition } from '@vibespa/core';
+import type { ModuleDefinition as SmallModuleDefinition } from '@vibespa/core/module';
+import { createGreeting } from './greeting.js';
+import type { GreetingExports, GreetingInputs } from './greeting.js';
+
+const needsExtra = (inputs: GreetingInputs & { inventedRequiredInput: () => void }): GreetingExports => {
+  inputs.inventedRequiredInput();
+  return createGreeting(inputs);
+};
+export const loader: ModuleDefinition<GreetingInputs, GreetingExports>['load'] = async () => needsExtra; // @diagnostic 2322 inventedRequiredInput
+export const smallLoader: SmallModuleDefinition<GreetingInputs, GreetingExports>['load'] = async () => needsExtra; // @diagnostic 2322 inventedRequiredInput

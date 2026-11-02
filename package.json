@@ -17,8 +17,9 @@
     "test:watch": "vitest",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "build:packages": "node scripts/build.mjs",
+    "check:consumers": "node packages/create-vibespa/checks/consumer-contracts.mjs && node packages/create-vibespa/checks/solid-domain.mjs",
     "export:adapters": "pnpm build:packages && node scripts/export-adapters.mjs",
-    "build": "pnpm check && pnpm build:packages && pnpm --filter @vibespa/playground build && node scripts/prepare-template.mjs",
+    "build": "pnpm check && pnpm build:packages && pnpm check:consumers && pnpm --filter @vibespa/playground build && node scripts/prepare-template.mjs && node packages/create-vibespa/checks/generated-apps.mjs",
     "preview": "pnpm --filter @vibespa/playground preview",
     "create:app": "node packages/create-vibespa/bin/create-vibespa.mjs",
     "create:module": "node packages/create-vibespa/bin/create-vibespa.mjs module"

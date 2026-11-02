@@ -1,10 +1,12 @@
-import { createSystem } from '@vibespa/core';
-import { createApplication } from './composition/createApplication';
-import { startApplication, type RunningApplication } from './composition/startApplication';
+import { createSolidSystem } from '@vibespa/solid/module';
+import { applicationModules, createApplication } from './composition/createApplication';
+import { createDemoRestBackend } from './composition/demoRestBackend';
+import { startApplication } from './composition/startApplication';
+import { startApplicationGeneration, type ApplicationGeneration } from './composition/startApplicationGeneration';
 import { mount, mountInspector, showStartupError } from './ui/mount';
 
 interface ApplicationHotData {
-  disposal?: Promise<void>;
+  generation?: ApplicationGeneration;
 }
 
 const target = document.getElementById('app');
@@ -12,39 +14,29 @@ if (!target) throw new Error('The application mount element is missing.');
 const inspectorTarget = document.getElementById('inspector');
 if (!inspectorTarget) throw new Error('The inspector mount element is missing.');
 
-const previousDisposal = (import.meta.hot?.data as ApplicationHotData | undefined)?.disposal ?? Promise.resolve();
-const system = createSystem({ id: 'playground' });
-let application: RunningApplication | undefined;
-let unmountInspector: (() => void) | undefined;
-let unmountError: (() => void) | undefined;
-let invalidated = false;
+const system = createSolidSystem({ id: 'playground', modules: applicationModules });
+const backend = new URLSearchParams(location.search).get('backend');
+const applicationOptions = backend === 'memory' ? { adapter: null }
+  : backend === 'rest' ? { adapter: createDemoRestBackend({ latencyMs: 250 }).adapter } : {};
+const generation = startApplicationGeneration({
+  previous: (import.meta.hot?.data as ApplicationHotData | undefined)?.generation,
+  mountInspector: () => mountInspector(inspectorTarget, system.snapshot, () => system.clearEvents()),
+  startApplication: () => startApplication(() => createApplication(system, applicationOptions), (running) => mount(target, running.focus)),
+  disposeSystem: () => system.dispose(),
+  showStartupError: () => showStartupError(target),
+});
 
 if (import.meta.hot) {
   import.meta.hot.dispose((data: ApplicationHotData) => {
-    invalidated = true;
     // Vite does not await dispose callbacks. The replacement entry explicitly
-    // awaits this promise before opening another instance of the same database.
-    data.disposal = previousDisposal.then(async () => {
-      try {
-        await application?.dispose();
-        await system.dispose();
-      } finally {
-        unmountInspector?.();
-        unmountError?.();
-      }
-    });
-    void data.disposal.catch((error: unknown) => { console.error('Unable to dispose VibeSPA', error); });
+    // waits for this generation before opening the same database again.
+    data.generation = generation;
+    void generation.dispose().catch((error: unknown) => { console.error('Unable to dispose VibeSPA', error); });
   });
 }
 
 try {
-  await previousDisposal;
-  if (!invalidated) {
-    unmountInspector = mountInspector(inspectorTarget, system.snapshot, () => system.clearEvents());
-    application = startApplication(() => createApplication(system), (running) => mount(target, running.focus));
-    await application.ready;
-  }
+  await generation.ready;
 } catch (error) {
   console.error('Unable to start VibeSPA', error);
-  if (!invalidated) unmountError = showStartupError(target);
 }

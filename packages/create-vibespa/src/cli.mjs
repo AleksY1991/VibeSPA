@@ -44,7 +44,15 @@ export async function runCli(arguments_, output = console.log) {
       application: resolve(options.get('--cwd') ?? process.cwd()),
     });
     output(`Created module at ${destination}.`);
-    output('Compose it by importing its definition and supplying its typed inputs.');
+    output([
+      'Import its definition and start it with system.start(definition, inputs).',
+      'Bind every input:',
+      "  from(handle, 'key') or from(handle): a capability exported by a module already started in this system.",
+      '    The system records the dependency edge and rechecks that provider before startup.',
+      '  external(value): configuration or any value no module provides; it is not checked.',
+      'Example:',
+      "  await system.start(remindersModule, { repository: from(storage, 'repository'), limit: external(20) });",
+    ].join('\n'));
     return;
   }
 

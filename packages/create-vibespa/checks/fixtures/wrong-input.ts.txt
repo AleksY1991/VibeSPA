@@ -1,0 +1,20 @@
+import { createScope, createSystem, external, from, startModule } from '@vibespa/core';
+import { createSystem as createSystemFromSubpath, external as externalFromSubpath } from '@vibespa/core/system';
+import { startModule as startSmallModule } from '@vibespa/core/module';
+import { greeting, smallGreeting } from './greeting.js';
+
+await startModule(greeting, { prefix: 123 }, createScope()); // @diagnostic 2322 string
+await startSmallModule(smallGreeting, { prefix: 'Hello', maximumLength: 'many' }, createScope()); // @diagnostic 2322 number
+
+const system = createSystem({ id: 'bound-consumer' });
+const provider = await system.start(greeting, { prefix: external('Hello') });
+from(provider, 'missing'); // @diagnostic 2345 greet
+await system.start(greeting, { prefix: external(123) }); // @diagnostic 2322 string
+await system.start(greeting, { prefix: from(provider, 'greet') }); // @diagnostic 2322 string
+await system.start(greeting, { prefix: 'Hello' }); // @diagnostic 2322 InputBinding
+await system.start(greeting, { prefix: external('Hello'), maximumLength: external('many') }); // @diagnostic 2322 number
+await system.start(greeting, { prefix: external('Hello'), invented: external(true) }); // @diagnostic 2353 invented
+await system.start(greeting, { prefix: external('Hello') }, { dependencies: [provider] }); // @diagnostic 2322 undefined
+const independentEdges = { id: 'override', dependencies: [provider] };
+await system.start(greeting, { prefix: external('Hello') }, independentEdges); // @diagnostic 2345 dependencies
+await createSystemFromSubpath({ id: 'subpath' }).start(greeting, { prefix: externalFromSubpath(123) }); // @diagnostic 2322 string

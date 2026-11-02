@@ -21,5 +21,17 @@ export interface ArchitectureOptions {
 }
 
 export function createArchitectureConfig(options?: ArchitectureOptions): Linter.Config[];
+
+export interface ApplicationModulePolicyOptions {
+  /** Production application-module files. */
+  files: string[];
+  /** Files exempt from the policy, such as module tests. */
+  ignores?: string[];
+  /** Directory of the tsconfig used by the type-aware promise rule. */
+  tsconfigRootDir: string;
+}
+
+/** Managed Solid helpers and type-aware promise handling for application modules. */
+export function createApplicationModulePolicy(options: ApplicationModulePolicyOptions): Linter.Config[];
 declare const plugin: ESLint.Plugin;
 export default plugin;

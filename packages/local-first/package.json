@@ -38,6 +38,16 @@
       "import": "./dist/session.js",
       "default": "./dist/session.js"
     },
+    "./solid-adapter": {
+      "development": {
+        "types": "./src/solidAdapter.ts",
+        "import": "./src/solidAdapter.ts",
+        "default": "./src/solidAdapter.ts"
+      },
+      "types": "./dist/solidAdapter.d.ts",
+      "import": "./dist/solidAdapter.js",
+      "default": "./dist/solidAdapter.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -50,7 +60,14 @@
   },
   "devDependencies": {
     "@vibespa/core": "workspace:*",
+    "@vibespa/solid": "workspace:*",
     "fake-indexeddb": "^6.2.4"
+  },
+  "peerDependencies": {
+    "@vibespa/solid": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@vibespa/solid": { "optional": true }
   },
   "license": "ISC",
   "engines": {

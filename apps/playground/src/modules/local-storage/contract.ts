@@ -1,4 +1,5 @@
-import type { IntentionRepository } from '../focus/contract';
+import type { DomainAdapter } from '@vibespa/solid/domain';
+import type { Intention } from '../../contracts/focus';
 
 export interface LocalStorageInputs {
   readonly name: string;
@@ -6,5 +7,5 @@ export interface LocalStorageInputs {
 }
 
 export interface LocalStorage {
-  readonly repository: IntentionRepository;
+  readonly adapter: DomainAdapter<Intention>;
 }

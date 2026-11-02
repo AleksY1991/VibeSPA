@@ -6,13 +6,13 @@ export const localStorageModule = defineFeatureModule<FeatureType.Store, LocalSt
   id: 'local-storage',
   kind: FeatureType.Store,
   title: 'Local storage',
-  description: 'Owns IndexedDB persistence, native queries and gesture history.',
+  description: 'Supplies IndexedDB persistence policy; Focus owns the live Solid records.',
   contract: {
     inputs: {
       name: 'The database identity owned by this application.',
       maximumTitleLength: 'The intention schema title length limit.',
     },
-    exports: { repository: 'Intention reads, batch writes and undo/redo capabilities.' },
+    exports: { adapter: 'Optional persistence adapter with restricted incoming admission.' },
   },
   load: () => import('./internal/runtime').then((module) => module.createLocalStorage),
 });
