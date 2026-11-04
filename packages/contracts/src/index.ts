@@ -3,6 +3,6 @@ export type { Cleanup, Scope } from './scope.js';
 export type { DataNodeSnapshot, DataPortSnapshot } from './data.js';
 export { FeatureType } from './system.js';
 export type {
-  FeatureContractSnapshot, FeaturePortSnapshot, ModuleSnapshot, ModuleState,
+  FeatureContractSnapshot, FeaturePortSnapshot, ModuleRegistrationSnapshot, ModuleSnapshot, ModuleState,
   SystemEvent, SystemEventType, SystemSnapshot, SystemState,
 } from './system.js';

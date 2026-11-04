@@ -33,6 +33,21 @@ export interface FeatureContractSnapshot {
   readonly exports: readonly FeaturePortSnapshot[];
 }
 
+/** A registered definition, including declarations that have never been started. */
+export interface ModuleRegistrationSnapshot {
+  /** Definition identity; runtime instance identities are listed separately. */
+  readonly id: string;
+  readonly kind: FeatureType;
+  readonly title: string;
+  readonly description: string;
+  readonly contract: FeatureContractSnapshot;
+  /** True when included in createSystem({ modules }), otherwise admitted at start. */
+  readonly selected: boolean;
+  readonly instanceIds: readonly string[];
+  /** Same-ID declarations disagree; inspect runtime instances for their actual boundaries. */
+  readonly hasConflictingDefinitions?: boolean;
+}
+
 /** Descriptions and lifecycle only: no application input or export values. */
 export interface ModuleSnapshot {
   readonly id: string;
@@ -69,6 +84,8 @@ export interface SystemSnapshot {
   readonly modules: readonly ModuleSnapshot[];
   readonly events: readonly SystemEvent[];
   readonly droppedEvents: number;
+  /** Registered definitions, independent of runtime startup and lifecycle. */
+  readonly registrations?: readonly ModuleRegistrationSnapshot[];
   /** Validated data definitions and bindings; contains no record values. */
   readonly data?: readonly DataNodeSnapshot[];
 }

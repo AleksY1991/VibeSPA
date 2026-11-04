@@ -1,0 +1,11 @@
+{
+  "package": "@ui-kit/core",
+  "version": "0.1.0",
+  "repository": "https://github.com/AleksY1991/design_system.git",
+  "directory": "packages/design-system",
+  "archive": "ui-kit-core-0.1.0-2e6a86911a46fbcbdae4af20b5cce649ed7fb0ba866251bd0e69839a8108cd06.tgz",
+  "sha256": "2e6a86911a46fbcbdae4af20b5cce649ed7fb0ba866251bd0e69839a8108cd06",
+  "sourceRevision": "7c19670cfd26e8190d9d0d511f2f612a86193298",
+  "sourceWorkingTree": "Includes existing uncommitted shared-repository changes at packaging time.",
+  "source": "Packed directly from the current shared design-system package with pnpm pack. Application templates copy this archive unchanged."
+}

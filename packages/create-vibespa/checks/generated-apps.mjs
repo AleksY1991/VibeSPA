@@ -45,7 +45,7 @@ async function checkContents(app, label) {
     'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.json', 'vite.config.ts', 'vitest.config.ts',
     'test-support/solid-diagnostics.ts']);
   for (const file of files) {
-    assert.ok(configuration.has(file) || file.startsWith('src/') || /^vendor\/vibespa-[\w.-]+\.tgz$/.test(file),
+    assert.ok(configuration.has(file) || file.startsWith('src/') || /^vendor\/(?:vibespa-|ui-kit-core-)[\w.-]+\.tgz$/.test(file),
       `${label}: unexpected file ${file}`);
     if (!file.endsWith('.tgz')) {
       const text = await readFile(join(app, file), 'utf8');
@@ -53,10 +53,12 @@ async function checkContents(app, label) {
       assert.ok(!/workspace:[*^~\d]|link:\.|\.\.\/\.\.\/packages\//.test(text), `${label}: ${file} has a workspace reference`);
     }
   }
-  for (const name of ['contracts', 'core', 'solid', 'local-first', 'eslint-plugin']) {
+  for (const name of ['contracts', 'core', 'solid', 'local-first', 'interaction', 'eslint-plugin']) {
     assert.equal(files.filter(file => file.startsWith(`vendor/vibespa-${name}-0`)).length, 1, `${label}: one ${name} archive`);
   }
   const manifest = JSON.parse(await readFile(join(app, 'package.json'), 'utf8'));
+  assert.match(manifest.dependencies['@ui-kit/core'], /^file:\.\/vendor\/ui-kit-core-[\w.-]+\.tgz$/, `${label}: pinned Haku design system`);
+  assert.equal(files.filter(file => /^vendor\/ui-kit-core-[\w.-]+\.tgz$/.test(file)).length, 1, `${label}: one design-system archive`);
   for (const [name, specifier] of Object.entries({ ...manifest.dependencies, ...manifest.devDependencies })) {
     if (name.startsWith('@vibespa/')) assert.match(specifier, /^file:\.\/vendor\/vibespa-[\w.-]+\.tgz$/, `${label}: ${name}`);
   }
@@ -67,11 +69,11 @@ async function checkContents(app, label) {
 /** One installed instance of each framework package and of Solid; exports resolve to shipped files. */
 async function checkInstall(app, label) {
   const store = await readdir(join(app, 'node_modules', '.pnpm'));
-  for (const prefix of ['@vibespa+contracts@', '@vibespa+core@', '@vibespa+solid@', '@vibespa+local-first@',
-    '@vibespa+eslint-plugin@', 'solid-js@', '@solidjs+signals@']) {
+  for (const prefix of ['@vibespa+contracts@', '@vibespa+core@', '@vibespa+solid@', '@vibespa+local-first@', '@vibespa+interaction@',
+    '@vibespa+eslint-plugin@', '@ui-kit+core@', 'solid-js@', '@solidjs+signals@']) {
     assert.equal(store.filter(entry => entry.startsWith(prefix)).length, 1, `${label}: ${prefix} installed once`);
   }
-  for (const name of ['contracts', 'core', 'solid', 'local-first', 'eslint-plugin']) {
+  for (const name of ['contracts', 'core', 'solid', 'local-first', 'interaction', 'eslint-plugin']) {
     const directory = join(app, 'node_modules', '@vibespa', name);
     const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
     const targets = [];

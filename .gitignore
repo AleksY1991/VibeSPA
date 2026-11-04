@@ -7,5 +7,6 @@ coverage/
 !.env.example
 packages/create-vibespa/template/
 *.tgz
+!vendor/ui-kit-core-*.tgz
 *.tsbuildinfo
 artifacts/

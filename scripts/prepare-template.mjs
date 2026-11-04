@@ -2,6 +2,7 @@
 // code, application configuration, and one pinned archive per framework package.
 // Run after `pnpm build:packages`.
 import { cp, copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applicationPackageNames, exportApplicationPackages, runPnpm } from './export-adapters.mjs';
@@ -12,6 +13,25 @@ const packageRoot = join(root, 'packages', 'create-vibespa');
 const playground = join(root, 'apps', 'playground');
 const destination = join(packageRoot, 'template');
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
+
+/** Copy the exact Haku design-system pin, rather than depending on a sibling checkout. */
+export async function copyDesignSystemPackage({ root: checkout, destination: output }) {
+  const manifest = await readJson(join(checkout, 'package.json'));
+  const reference = manifest.devDependencies?.['@ui-kit/core'];
+  const match = reference?.match(/^file:vendor\/(ui-kit-core-[\w.-]+-([a-f0-9]{64})\.tgz)$/);
+  if (!match) throw new Error('The Haku design system must be pinned to a SHA-256-named vendor archive.');
+  const [name, expectedHash] = match.slice(1);
+  const source = join(checkout, 'vendor', name);
+  await assertNoSymlink(source);
+  const contents = await readFile(source);
+  if (createHash('sha256').update(contents).digest('hex') !== expectedHash) {
+    throw new Error('The Haku design-system archive does not match its pinned SHA-256.');
+  }
+  await mkdir(output, { recursive: true });
+  await assertNoSymlink(output);
+  await copyFile(source, join(output, name));
+  return { package: '@ui-kit/core', specifier: `file:./vendor/${name}` };
+}
 
 /** Exact versions the application installs, taken from the checkout's manifests. */
 async function applicationManifest(archives) {
@@ -41,8 +61,8 @@ async function applicationManifest(archives) {
       check: 'pnpm lint && pnpm typecheck && pnpm test',
     },
     dependencies: pick([...applicationPackageNames.filter(name => name !== 'eslint-plugin').map(framework),
-      '@solidjs/web', 'solid-js', 'rxdb', 'rxjs']),
-    devDependencies: pick([framework('eslint-plugin'), '@eslint/js', '@solidjs/vite-plugin', '@types/node', 'eslint',
+      '@ui-kit/core', '@solidjs/web', 'solid-js', 'rxdb', 'rxjs']),
+    devDependencies: pick([framework('eslint-plugin'), '@babel/preset-typescript', '@eslint/js', '@solidjs/vite-plugin', '@types/node', 'eslint',
       'fake-indexeddb', 'globals', 'happy-dom', 'typescript', 'typescript-eslint', 'vite', 'vitest']),
   };
 }
@@ -70,6 +90,8 @@ async function prepareTemplate() {
   try {
     const exported = await exportApplicationPackages({ root, destination: join(staged, 'vendor') });
     const archives = new Map(exported.map(item => [item.package, `file:./vendor/${basename(item.path)}`]));
+    const designSystem = await copyDesignSystemPackage({ root, destination: join(staged, 'vendor') });
+    archives.set(designSystem.package, designSystem.specifier);
     await cp(join(playground, 'src'), join(staged, 'src'), { recursive: true });
     for (const name of ['index.html', 'vite.config.ts']) await copyFile(join(playground, name), join(staged, name));
     // The ESLint source is renamed so the checkout's own lint does not treat it as a nested config.

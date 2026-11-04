@@ -1,7 +1,10 @@
 import type { Readable, Scope } from '@vibespa/contracts';
 import { normalizeKey } from './key.js';
+import { createInteractionDiagnostics } from './diagnostics.js';
+import type { InteractionSnapshot } from './diagnostics.js';
 
 export { normalizeKey } from './key.js';
+export type { InteractionSnapshot, SurfaceSnapshot, SurfaceActionSnapshot } from './diagnostics.js';
 
 export interface ActionContext {
   readonly signal: AbortSignal;
@@ -36,6 +39,8 @@ export interface ResolvedAction {
 }
 
 export interface Interaction {
+  /** Immutable live metadata, ordered from the topmost mount down. */
+  readonly snapshot: Readable<InteractionSnapshot>;
   /** Newest active mount has priority. The returned release is idempotent. */
   mount(surface: InteractionSurface): () => void;
   resolveKey(key: string, context?: KeyContext): ResolvedAction | null;
@@ -66,6 +71,14 @@ export function createInteraction(scope: Scope): Interaction {
   const mounted: MountedSurface[] = [];
   let closed = false;
   const current = () => !closed && !scope.signal.aborted;
+  const diagnostics = createInteractionDiagnostics(
+    () => mounted,
+    () => closed ? 'disposed' : scope.signal.aborted ? 'cancelled' : 'active',
+  );
+  const cancelDiagnostics = () => {
+    diagnostics.stopWatching();
+    diagnostics.publish();
+  };
 
   const find = (matches: (action: MountedAction) => boolean, context: KeyContext = {}): Candidate | null => {
     if (!current()) return null;
@@ -102,12 +115,17 @@ export function createInteraction(scope: Scope): Interaction {
   const dispose = () => {
     if (closed) return;
     closed = true;
+    scope.signal.removeEventListener('abort', cancelDiagnostics);
+    diagnostics.stopWatching();
     mounted.length = 0;
+    diagnostics.publish();
     unregister();
   };
   const unregister = scope.defer(dispose);
+  scope.signal.addEventListener('abort', cancelDiagnostics, { once: true });
 
   const interaction: Interaction = {
+    snapshot: diagnostics.snapshot,
     mount(surface) {
       if (!current()) throw new Error('Interaction belongs to an ended scope.');
       if (!surface.id.trim()) throw new Error('A surface needs a nonempty ID.');
@@ -130,9 +148,21 @@ export function createInteraction(scope: Scope): Interaction {
         transparent: surface.transparent ?? false, actions: Object.freeze(actions),
       });
       mounted.push(entry);
+      try {
+        diagnostics.watch(entry);
+        diagnostics.publish();
+      }
+      catch (error) {
+        mounted.splice(mounted.indexOf(entry), 1);
+        diagnostics.unwatch(entry);
+        throw error;
+      }
       return () => {
         const index = mounted.indexOf(entry);
-        if (index >= 0) mounted.splice(index, 1);
+        if (index < 0) return;
+        mounted.splice(index, 1);
+        diagnostics.unwatch(entry);
+        diagnostics.publish();
       };
     },
     resolveKey(key, context = {}) {

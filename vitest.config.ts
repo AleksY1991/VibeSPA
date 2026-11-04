@@ -1,7 +1,9 @@
 import { defineConfig } from 'vitest/config';
+import solid from '@solidjs/vite-plugin';
 
 export default defineConfig({
-  resolve: { conditions: ['development'] },
+  plugins: [solid({ include: /\.tsx$/, refresh: { disabled: true }, babel: { presets: [['@babel/preset-typescript', { onlyRemoveTypeImports: true }]] } })],
+    resolve: { conditions: ['development'], dedupe: ['solid-js', '@solidjs/web', '@solidjs/signals'] },
   test: {
     environment: 'node',
     exclude: ['**/node_modules/**', '**/dist/**', '**/template/**'],
@@ -24,7 +26,7 @@ export default defineConfig({
           setupFiles: ['./test-support/solid-diagnostics.ts'],
           include: ['apps/**/src/**/*.test.ts'],
           environment: 'happy-dom',
-          server: { deps: { inline: [/solid-js/, /@solidjs\//] } },
+          server: { deps: { inline: [/solid-js/, /@solidjs\//, /@ui-kit\//, /@awesome.me\//, /lit(?:-|\/|$)/, /@lit\//] } },
         },
       },
       {

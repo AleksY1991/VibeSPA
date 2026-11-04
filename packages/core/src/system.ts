@@ -1,5 +1,6 @@
 import type {
-  ModuleSnapshot, ModuleState, Readable, SystemEvent, SystemSnapshot, SystemState,
+  FeatureContractSnapshot, ModuleRegistrationSnapshot, ModuleSnapshot, ModuleState,
+  Readable, SystemEvent, SystemSnapshot, SystemState,
 } from '@vibespa/contracts';
 import { FeatureType } from '@vibespa/contracts';
 import { startModule } from './module.js';
@@ -67,13 +68,19 @@ export interface SystemOptions {
   readonly id: string;
   readonly eventLimit?: number;
   readonly createRuntime?: ModuleRuntimeFactory;
-  /** Inert definitions selected for data-graph validation before any startup. */
+  /** Inert definitions registered for diagnostics and data-graph validation before startup. */
   readonly modules?: readonly SystemModuleDeclaration[];
 }
 
 export interface SystemModuleDeclaration {
   readonly id: string;
   readonly kind: FeatureType;
+  readonly title?: string;
+  readonly description?: string;
+  readonly contract?: {
+    readonly inputs: Readonly<Record<string, string>>;
+    readonly exports: Readonly<Record<string, string>>;
+  };
   readonly data?: DataDeclarations;
 }
 
@@ -110,6 +117,68 @@ interface Provider {
   readonly input?: string;
 }
 
+interface Registration {
+  readonly metadata: Omit<ModuleRegistrationSnapshot, 'instanceIds'>;
+  readonly missingTitle: boolean;
+  readonly missingDescription: boolean;
+  readonly missingContract: boolean;
+}
+
+function snapshotContract(contract: SystemModuleDeclaration['contract']): FeatureContractSnapshot {
+  const ports = (items: Readonly<Record<string, string>>) => Object.freeze(
+    Object.entries(items).map(([name, description]) => Object.freeze({ name, description })),
+  );
+  return Object.freeze({
+    inputs: ports(contract?.inputs ?? {}),
+    exports: ports(contract?.exports ?? {}),
+  });
+}
+
+function snapshotRegistration(
+  definition: SystemModuleDeclaration, selected: boolean,
+): Registration {
+  return {
+    metadata: Object.freeze({
+      id: definition.id,
+      kind: definition.kind,
+      title: definition.title ?? definition.id,
+      description: definition.description ?? '',
+      contract: snapshotContract(definition.contract),
+      selected,
+    }),
+    missingTitle: definition.title === undefined,
+    missingDescription: definition.description === undefined,
+    missingContract: definition.contract === undefined,
+  };
+}
+
+function sameContract(left: FeatureContractSnapshot, right: FeatureContractSnapshot): boolean {
+  const samePorts = (a: FeatureContractSnapshot['inputs'], b: FeatureContractSnapshot['inputs']) =>
+    a.length === b.length && a.every(port => b.some(other =>
+      port.name === other.name && port.description === other.description));
+  return samePorts(left.inputs, right.inputs) && samePorts(left.exports, right.exports);
+}
+
+function mergeRegistration(current: Registration, definition: SystemModuleDeclaration): Registration {
+  const incoming = snapshotRegistration(definition, false);
+  const metadata = current.metadata;
+  const next = incoming.metadata;
+  const conflict = metadata.hasConflictingDefinitions === true || metadata.kind !== next.kind
+    || (!current.missingTitle && metadata.title !== next.title)
+    || (!current.missingDescription && metadata.description !== next.description)
+    || (!current.missingContract && !sameContract(metadata.contract, next.contract));
+  return {
+    ...incoming,
+    metadata: Object.freeze({
+      ...metadata,
+      title: current.missingTitle ? next.title : metadata.title,
+      description: current.missingDescription ? next.description : metadata.description,
+      contract: current.missingContract ? next.contract : metadata.contract,
+      ...(conflict ? { hasConflictingDefinitions: true } : {}),
+    }),
+  };
+}
+
 function errorMessage(error: unknown, seen = new Set<unknown>()): string {
   if (seen.has(error)) return 'Repeated error';
   seen.add(error);
@@ -140,6 +209,7 @@ export function createSystem(options: SystemOptions): System {
   // dependency container. Actual inputs and lifetimes still use start()/from().
   const selected = new Map<SystemModuleDeclaration, DataDeclarations | undefined>();
   const selectedIds = new Set<string>();
+  const registrations = new Map<string, Registration>();
   for (const definition of options.modules ?? []) {
     if (selectedIds.has(definition.id)) throw new Error(`Duplicate selected module: ${definition.id}`);
     selectedIds.add(definition.id);
@@ -151,6 +221,7 @@ export function createSystem(options: SystemOptions): System {
       throw new Error(`Only Data modules can provide data contracts: ${definition.id}`);
     }
     selected.set(definition, data);
+    registrations.set(definition.id, snapshotRegistration(definition, true));
   }
   const dataGraph = validateDataGraph([...selected].map(([definition, data]) => ({ id: definition.id, data })));
 
@@ -173,6 +244,12 @@ export function createSystem(options: SystemOptions): System {
     }))),
     events,
     droppedEvents,
+    registrations: Object.freeze([...registrations.values()].map(registration => Object.freeze({
+      ...registration.metadata,
+      instanceIds: Object.freeze([...instances.values()]
+        .filter(instance => instance.metadata.definitionId === registration.metadata.id)
+        .map(instance => instance.metadata.id)),
+    }))),
     ...(dataGraph.length === 0 ? {} : { data: dataGraph }),
   });
   const source = createSource(makeSnapshot());
@@ -231,9 +308,6 @@ export function createSystem(options: SystemOptions): System {
       throw new Error(`Duplicate dependency for module ${id}`);
     }
 
-    const ports = (items: Readonly<Record<string, string>>) => Object.freeze(
-      Object.entries(items).map(([name, description]) => Object.freeze({ name, description })),
-    );
     const instance: Instance = {
       metadata: Object.freeze({
         id,
@@ -241,16 +315,17 @@ export function createSystem(options: SystemOptions): System {
         kind: definition.kind,
         title: definition.title,
         description: definition.description,
-        contract: Object.freeze({
-          inputs: ports(definition.contract.inputs),
-          exports: ports(definition.contract.exports),
-        }),
+        contract: snapshotContract(definition.contract),
         dependencies: Object.freeze(dependencies),
       }),
       state: 'loading',
       operations: new Set(),
       ...(data === undefined ? {} : { data }),
     };
+    const registration = registrations.get(definition.id);
+    registrations.set(definition.id, registration
+      ? mergeRegistration(registration, definition)
+      : snapshotRegistration(definition, false));
     instances.set(id, instance);
 
     const guarded = {

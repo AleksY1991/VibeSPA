@@ -18,7 +18,7 @@ async function fixture(t) {
     await writeFile(target, typeof value === 'string' ? value : JSON.stringify(value));
   };
   await write('LICENSE', 'ISC license fixture.\n');
-  for (const name of ['contracts', 'solid', 'local-first']) {
+  for (const name of ['contracts', 'solid', 'local-first', 'interaction']) {
     await write(`packages/${name}/package.json`, {
       name: `@vibespa/${name}`, version: '0.1.0', type: 'module',
       files: ['dist', 'src'], exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
@@ -142,7 +142,7 @@ test('application archives ship one unbundled package each, resolving only shipp
   await write('packages/eslint-plugin/tests/rules.test.js', 'not shipped\n');
   const exported = await exportApplicationPackages({ root, destination: join(directory, 'vendor') });
   assert.deepEqual(exported.map(item => item.package),
-    ['@vibespa/contracts', '@vibespa/core', '@vibespa/solid', '@vibespa/local-first', '@vibespa/eslint-plugin']);
+    ['@vibespa/contracts', '@vibespa/core', '@vibespa/solid', '@vibespa/local-first', '@vibespa/interaction', '@vibespa/eslint-plugin']);
   const archives = new Map(await Promise.all(exported.map(async item => [item.package, archiveFiles(await readFile(item.path))])));
   const core = archives.get('@vibespa/core');
   const manifest = JSON.parse(core.get('package/package.json'));

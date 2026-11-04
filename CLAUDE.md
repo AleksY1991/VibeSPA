@@ -22,6 +22,28 @@ a private Solid owner alongside its awaited resource scope. Its application
 modules expose reactive reads to other modules and views as tracked Solid
 accessors; the neutral `Readable` contract remains the core and adapter boundary.
 
+## Mandatory UI rule: Haku design system
+
+All VibeSPA UI MUST use components from the Haku design-system repository,
+[`AleksY1991/design_system`](https://github.com/AleksY1991/design_system), through
+its public `@ui-kit/core` exports. This requirement applies to every UI surface,
+including the playground, debug tooling, the System inspector, scaffolding,
+generated applications and any future VibeSPA UI. It is mandatory for all
+contributors and agents.
+
+Use the shared controls, keyed `List`, Lucide icons, theme, typography and surface
+contracts. Do not copy implementations, create local replacement controls, use
+another component library directly, or override shared control internals. If a
+required component or variant is missing, add it to the Haku design-system repo
+and consume its public export here; do not implement a VibeSPA-only substitute.
+Application code may compose semantic content and own page placement and
+diagnostic graph geometry; text uses shared role tokens.
+
+The playground and generated applications MUST consume the same SHA-256-pinned
+`@ui-kit/core` archive in `vendor/`. `vendor/design-system.json` records its source
+snapshot. Preserve the shared-component lint rules and include this mandatory
+rule in generated applications' `CLAUDE.md` so generation cannot bypass it.
+
 ## Start
 
 Use Node 22.12 or newer and PNPM. The Solid adapter deliberately matches Haku's
@@ -40,6 +62,11 @@ complete all, undo, and redo apply to private Solid state before backend
 acknowledgement. Its always-visible System inspector link opens live module contracts,
 dependencies, lifecycle states, errors, and recorded command activity. The
 inspector mounts before application startup and stays available after failure.
+Its Features view lists registered definitions, including ones not yet started,
+and links them to runtime instances. Data graph shows provider → contract →
+consumer edges, capabilities and explicit contract relations. Surfaces shows
+live interaction priority, activity, transparency and opaque blockers. Activity
+retains the bounded operation and lifecycle journal.
 
 ```sh
 pnpm check          # architecture lint, strict TypeScript, behavioral tests
@@ -75,7 +102,7 @@ a registry publication nor a sibling checkout.
   `scripts/export-adapters.mjs`. `create-vibespa` always generates from that
   embedded template, from the checkout or packed.
 - Application archives (`@vibespa/contracts`, `core`, `solid`, `local-first`,
-  `eslint-plugin`) are not bundled: workspace dependencies become exact
+  `interaction`, `eslint-plugin`) are not bundled: workspace dependencies become exact
   versions, and `pnpm-workspace.yaml` overrides every `@vibespa` package to its
   archive, so the installed graph has one instance of each and one Solid. Their
   manifests drop the workspace-only `development` condition and ship only the
@@ -91,10 +118,18 @@ a registry publication nor a sibling checkout.
   diagnostics setup, single package instances and destination protection.
   Installing needs the package registry or a warm pnpm store.
 
+The template also includes the pinned `@ui-kit/core` archive from this checkout's
+`vendor/`, verified against the SHA-256 in its filename. Generated apps need no
+sibling design-system checkout. UI lint rejects native replacement controls,
+private control styling and copied icons. `prepareApplicationUi` prepares the
+shared implementation before the owned renderer roots mount; the host supplies
+surface authority while the controls own their keyboard and form behavior.
+
 Pinned archives never update on their own. To update an application, run
 `pnpm build:packages` and
 `node scripts/export-adapters.mjs --application-packages --destination <dir>`
-here, replace the application's `vendor/` archives, update the
+here, replace the application's `@vibespa` archives in `vendor/` while retaining
+the `@ui-kit/core` archive, update the
 `file:./vendor/...` entries in its `package.json` and the `@vibespa` overrides
 in its `pnpm-workspace.yaml`, align `solid-js`, `@solidjs/web`, `rxdb` and
 `rxjs`, then run `pnpm install`, `pnpm check` and `pnpm build` there. The
@@ -267,7 +302,10 @@ own borrowed resources. Whole-object method calls retain their receiver;
 extracting a method keeps ordinary JavaScript extraction semantics.
 `external(value)` is explicitly unchecked, even for an old repository.
 
-`system.snapshot` is an immutable `Readable<SystemSnapshot>`. It includes module
+`system.snapshot` is an immutable `Readable<SystemSnapshot>`. Its `registrations`
+list includes selected inert definitions before startup and definitions admitted
+by `start`, with public contract metadata and runtime `instanceIds`. Registration
+does not load a module. It also includes module
 identities, kinds, contract descriptions, dependency edges, lifecycle states, and
 a bounded ordered event journal. Loading, construction, cancellation, rollback,
 disposal, and failures remain visible. Inspector subscriber exceptions cannot
@@ -718,6 +756,13 @@ disposal. Inject storage; the package does not select a browser or server store.
 `createInteraction(scope)` mounts ordered surfaces. Use each surface's same
 `active: Readable<boolean>` to decide visibility. An active opaque surface stops
 unmatched actions; resolved commands recheck the live stack before invocation.
+`interaction.snapshot` is an immutable `Readable<InteractionSnapshot>` ordered
+topmost first. It includes inactive surfaces, transparency, reachability,
+`blockedBy`, and action IDs, normalized keys and enabled state. Reachability
+describes the surface stack; a matching disabled action can still stop a specific
+resolution. It never exposes action implementations or application payloads.
+Snapshots update on mount/release and active/enabled changes; cancellation stops
+observations and marks every surface unreachable, and disposal clears the stack.
 `attachKeyboard` from `@vibespa/interaction/browser` attaches one owned dispatcher
 per event target and respects editable controls and composition by default.
 

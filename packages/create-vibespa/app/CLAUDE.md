@@ -30,6 +30,25 @@ files. Definitions are inert: importing one must not start work. JSX, CSS and
 browser elements stay in `ui/`. `eslint.config.js` enforces these boundaries
 with `@vibespa/eslint-plugin`.
 
+## Mandatory UI rule: Haku design system
+
+All VibeSPA UI MUST use components from the Haku design-system repository,
+[`AleksY1991/design_system`](https://github.com/AleksY1991/design_system), through
+its public `@ui-kit/core` exports. This mandatory rule applies to the application,
+debug tooling, the System inspector, generated UI and all future UI, and binds
+every contributor and agent. Its pinned archive is included in `vendor/`; there
+is no sibling checkout dependency. Use shared controls, `List` with explicit `keyBy`, Lucide
+icons, theme and typography tokens. Construct live observables with
+`constructItem`, and pass explicit `surface` and `hotkeys` to each control.
+Do not recreate native buttons, fields, selects, links or disclosures, copy SVG
+icons, redefine the shared theme, or target control implementation selectors.
+Do not use another component library directly. If a required component or variant
+is missing, add it to the Haku design-system repo and consume its public export;
+do not implement an application-only replacement.
+Local CSS owns only application layout, graph placement and semantic text roles.
+UI lint enforces these boundaries. The owned UI runtime prepares the shared
+implementation and supplies its surface platform before mounting the app.
+
 ## Modules
 
 Start modules with `system.start(definition, inputs)`. Bind every input with
@@ -104,8 +123,9 @@ update on their own. To update them from a VibeSPA checkout:
 
 1. In the checkout, run `pnpm build:packages`, then
    `node scripts/export-adapters.mjs --application-packages --destination <this app>/vendor-next`.
-2. Replace `vendor/` with the new archives (file names carry each archive's
-   SHA-256).
+2. Replace only the `@vibespa` archives in `vendor/` with the new archives (file
+   names carry each archive's SHA-256). Retain the `ui-kit-core` archive and its
+   existing pin when updating the framework.
 3. Update every `file:./vendor/...` entry in `package.json` and the matching
    `overrides` in `pnpm-workspace.yaml` to the new file names. The overrides keep
    one instance of each `@vibespa` package across the dependency graph.

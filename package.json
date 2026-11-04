@@ -31,6 +31,7 @@
     "@solidjs/web": "2.0.0-rc.14",
     "@supabase/supabase-js": "2.110.9",
     "@types/node": "26.1.2",
+    "@ui-kit/core": "file:vendor/ui-kit-core-0.1.0-2e6a86911a46fbcbdae4af20b5cce649ed7fb0ba866251bd0e69839a8108cd06.tgz",
     "@vibespa/contracts": "workspace:*",
     "@vibespa/core": "workspace:*",
     "@vibespa/eslint-plugin": "workspace:*",

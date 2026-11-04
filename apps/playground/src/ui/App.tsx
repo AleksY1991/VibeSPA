@@ -1,7 +1,10 @@
 /** @jsxImportSource @solidjs/web */
 import { createSignal, onCleanup } from 'solid-js';
+import { Button, Card, Form, Link, TextField, constructItem } from '@ui-kit/core';
+import type { ButtonState, FormState, LinkState } from '@ui-kit/core';
+import type { InputFocusHandle } from '@ui-kit/core/contracts/controls';
+import { CheckIcon, PlusIcon, RedoIcon, UndoIcon } from '@ui-kit/core/icons';
 import type { CommandResult, FocusView } from '../contracts/focus';
-import { Icon } from './Icons';
 import { IntentionList } from './IntentionList';
 import './theme.css';
 
@@ -23,9 +26,26 @@ export function App(props: { readonly focus: FocusView }) {
   const [busy, setBusy] = createSignal(() => false);
   const [formError, setFormError] = createSignal(() => '');
   const [notice, setNotice] = createSignal(() => '');
-  let field: HTMLInputElement | undefined;
+  let field: InputFocusHandle | undefined;
   let active = true;
   onCleanup(() => { active = false; });
+  const controls = constructItem('focus.controls', item => ({
+    draft: item.observe('draft', draft),
+    form: item.observe<FormState>('form', () => ({ disabled: busy() })),
+    add: item.observe<ButtonState>('add', () => ({ disabled: busy() })),
+    complete: item.observe<ButtonState>('complete', () => ({ disabled: busy() || pending().length === 0 })),
+    undo: item.observe<ButtonState>('undo', () => ({ disabled: busy() || !history().canUndo })),
+    redo: item.observe<ButtonState>('redo', () => ({ disabled: busy() || !history().canRedo })),
+    retry: item.observe<ButtonState>('retry', () => ({ disabled: busy() })),
+    keepLocal: item.observe<ButtonState>('keepLocal', () => ({ disabled: busy() })),
+    panel: item.constant('panel', true),
+    failed: item.observe('failed', () => delivery().phase === 'failed'),
+    home: item.constant<LinkState>('home', { href: '/' }),
+    skip: item.constant<LinkState>('skip', { href: '#focus' }),
+    memory: item.constant<LinkState>('memory', { href: '?backend=memory' }),
+    rest: item.constant<LinkState>('rest', { href: '?backend=rest' }),
+    indexedDb: item.constant<LinkState>('indexedDb', { href: '?backend=rxdb' }),
+  }));
 
   async function perform(operation: () => Promise<CommandResult>, message: string): Promise<CommandResult> {
     if (busy()) return { ok: true };
@@ -44,8 +64,7 @@ export function App(props: { readonly focus: FocusView }) {
     }
   }
 
-  async function add(event: SubmitEvent) {
-    event.preventDefault();
+  async function add() {
     if (busy()) return;
     setFormError('');
     const result = await perform(() => props.focus.commands.add(draft()), 'Intention added.');
@@ -61,53 +80,49 @@ export function App(props: { readonly focus: FocusView }) {
 
   return (
     <div class="app-shell">
-      <a class="skip-link" href="#focus">Skip to intentions</a>
+      <div class="skip-link"><Link.View observable={controls.skip} surface={{ kind: 'inherit' }} hotkeys={[]}>Skip to intentions</Link.View></div>
       <header class="site-header">
-        <a class="wordmark" href="/" aria-label="VibeSPA home">
-          <span class="brand-symbol" aria-hidden="true"><span /><span /><span /></span>
-          Vibe<span class="wordmark-light">SPA</span>
-        </a>
+        <Link.View observable={controls.home} surface={{ kind: 'inherit' }} hotkeys={[]} aria-label="VibeSPA home">VibeSPA</Link.View>
         <span class="brand-promise">Good vibes. Clear boundaries.</span>
       </header>
 
       <main id="focus" class="main-grid">
         <div class="focus-room">
           <div class="intro">
-            <div class="eyebrow"><span class="tiny-line" /> A little room to focus</div>
-            <h1>Less noise.<br /><span>More space.</span></h1>
+            <h1>Less noise. More space.</h1>
             <p>Put your thoughts down. Take one small step.</p>
           </div>
 
           <section class="focus-panel" aria-label="Your intentions">
-            <form class="add-form" onSubmit={(event) => { void add(event); }}>
-              <label for="intention">What would you like to make space for?</label>
+          <Card.View observable={controls.panel} surface={{ kind: 'inherit' }} hotkeys={[]} recipe="content">
+            <Form.View observable={controls.form} surface={{ kind: 'inherit' }} hotkeys={[]} class="add-form" onSubmit={intent => { intent.preventDefault(); void add(); }}>
               <div class="input-row">
-                <input
-                  ref={(element) => { field = element; }}
+                <div class="intention-field"><TextField.View
+                  observable={controls.draft} surface={{ kind: 'inherit' }} hotkeys={[]}
+                  onHandle={handle => { field = handle; }}
                   id="intention"
+                  label="What would you like to make space for?"
+                  labelVisible
+                  recipe="form"
+                  size="large"
                   name="intention"
                   type="text"
                   autocomplete="off"
                   placeholder="Take the next small step…"
-                  value={draft()}
                   disabled={busy()}
                   aria-invalid={formError() ? 'true' : undefined}
                   aria-describedby={formError() ? 'intention-error' : undefined}
-                  onInput={(event) => { setDraft(event.currentTarget.value); setFormError(''); }}
-                />
-                <button class="primary-button" type="submit" disabled={busy()}><Icon name="plus" /><span>Add intention</span></button>
+                  onValueChange={value => { setDraft(value); setFormError(''); }}
+                /></div>
+                <Button.View observable={controls.add} surface={{ kind: 'inherit' }} hotkeys={[]} type="submit" variant="default" size="large" start={<PlusIcon />}>Add intention</Button.View>
               </div>
               <p id="intention-error" class="field-error" role="alert">{formError()}</p>
-            </form>
+            </Form.View>
 
             <div class="list-toolbar">
               <span class="section-caption">A small step is still a step.</span>
-              <button
-                class="text-button"
-                type="button"
-                disabled={busy() || pending().length === 0}
-                onClick={() => { void perform(() => props.focus.commands.completePending(), 'All intentions completed.'); }}
-              ><Icon name="check" />Complete all</button>
+              <Button.View observable={controls.complete} surface={{ kind: 'inherit' }} hotkeys={[]} variant="ghost" start={<CheckIcon />}
+                onActivate={() => { void perform(() => props.focus.commands.completePending(), 'All intentions completed.'); }}>Complete all</Button.View>
             </div>
 
             <IntentionList
@@ -126,35 +141,37 @@ export function App(props: { readonly focus: FocusView }) {
             />
 
             <footer class="panel-footer">
-              <span class="save-note" role="status"><span class="saved-dot" aria-hidden="true" />{saveNote()}</span>
+              <span class="save-note" role="status">{saveNote()}</span>
               <div class="history-controls" aria-label="Change history">
-                <button class="history-button" type="button" disabled={busy() || !history().canUndo} onClick={() => { void perform(() => props.focus.commands.undo(), 'Change undone.'); }}><Icon name="undo" />Undo</button>
-                <button class="history-button" type="button" disabled={busy() || !history().canRedo} onClick={() => { void perform(() => props.focus.commands.redo(), 'Change redone.'); }}><Icon name="redo" />Redo</button>
+                <Button.View observable={controls.undo} surface={{ kind: 'inherit' }} hotkeys={[]} variant="ghost" start={<UndoIcon />} onActivate={() => { void perform(() => props.focus.commands.undo(), 'Change undone.'); }}>Undo</Button.View>
+                <Button.View observable={controls.redo} surface={{ kind: 'inherit' }} hotkeys={[]} variant="ghost" start={<RedoIcon />} onActivate={() => { void perform(() => props.focus.commands.redo(), 'Change redone.'); }}>Redo</Button.View>
               </div>
             </footer>
-            {delivery().phase === 'failed' && <div class="field-error" role="alert">
+            <Card.View observable={controls.failed} surface={{ kind: 'inherit' }} hotkeys={[]} recipe="notice" tone="error" attributes={{ role: 'alert' }}>
+              <div class="delivery-recovery">
               <p>{delivery().error}</p>
-              <button class="text-button" type="button" disabled={busy()} onClick={() => { void perform(() => props.focus.commands.retry(), 'Retry started.'); }}>Retry save</button>
+              <div><Button.View observable={controls.retry} surface={{ kind: 'inherit' }} hotkeys={[]} onActivate={() => { void perform(() => props.focus.commands.retry(), 'Retry started.'); }}>Retry save</Button.View></div>
               <p>If the saved rows changed elsewhere, keeping your version replaces those rows with your local changes.</p>
-              <button class="text-button" type="button" disabled={busy()} onClick={() => { void perform(() => props.focus.commands.keepLocal(), 'Saving your version.'); }}>Keep my version</button>
-            </div>}
+              <div><Button.View observable={controls.keepLocal} surface={{ kind: 'inherit' }} hotkeys={[]} onActivate={() => { void perform(() => props.focus.commands.keepLocal(), 'Saving your version.'); }}>Keep my version</Button.View></div>
+              </div>
+            </Card.View>
+          </Card.View>
           </section>
           <p class="live-message" role="status" aria-live="polite">{notice()}</p>
         </div>
 
         <aside class="architecture-note" aria-label="About this starter">
-          <div class="architecture-heading"><span class="tiny-line" /><span>Inside this starter</span></div>
-          <h2>Small pieces.<br />A calm whole.</h2>
-          <p>Each module does one thing.<br />Clear contracts bring them together.</p>
+          <h2>Inside this starter</h2>
+          <p>Each module does one thing. Clear contracts bring them together.</p>
           <ol class="module-map">
-            <li><span class="module-number">01</span><div><strong>Presentation</strong><span>Reads state. Calls commands.</span></div></li>
-            <li><span class="module-number">02</span><div><strong>Title policy</strong><span>One small rule, on its own.</span></div></li>
-            <li><span class="module-number">03</span><div><strong>Focus</strong><span>Owns state, commands and history.</span></div></li>
-            <li><span class="module-number">04</span><div><strong>Optional saving</strong><span>Memory, REST or IndexedDB.</span></div></li>
+            <li><strong>Presentation</strong><span>Reads state. Calls commands.</span></li>
+            <li><strong>Title policy</strong><span>One small rule, on its own.</span></li>
+            <li><strong>Focus</strong><span>Applies feature policy through the Data contract.</span></li>
+            <li><strong>Intentions data</strong><span>Owns state, commands and history.</span></li>
+            <li><strong>Optional saving</strong><span>Memory, REST or IndexedDB.</span></li>
           </ol>
-          <div class="composition-note"><span class="composition-symbol" aria-hidden="true">↳</span><p>Composition connects the pieces.<br />Every lifetime has an owner.</p></div>
-          <p>Try the same UI: <a href="?backend=memory">memory</a> · <a href="?backend=rest">demo REST</a> · <a href="?backend=rxdb">IndexedDB</a></p>
-          <div class="framework-label"><span aria-hidden="true">✳</span> Built with VibeSPA</div>
+          <p>Composition connects the pieces. Every lifetime has an owner.</p>
+          <div class="backend-links"><span>Try the same UI:</span><Link.View observable={controls.memory} surface={{ kind: 'inherit' }} hotkeys={[]}>Memory</Link.View><Link.View observable={controls.rest} surface={{ kind: 'inherit' }} hotkeys={[]}>Demo REST</Link.View><Link.View observable={controls.indexedDb} surface={{ kind: 'inherit' }} hotkeys={[]}>IndexedDB</Link.View></div>
         </aside>
       </main>
       <footer class="site-footer"><span>A little structure. A lot of possibility.</span><span>Local first · Micro modular · Yours to shape</span></footer>
