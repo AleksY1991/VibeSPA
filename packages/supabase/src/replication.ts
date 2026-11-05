@@ -4,7 +4,7 @@ import { replicateSupabase } from 'rxdb/plugins/replication-supabase';
 import type { RxSupabaseReplicationState } from 'rxdb/plugins/replication-supabase';
 import type { RxCollection, WithDeleted } from 'rxdb';
 import type {
-  CollectionKey, SupabaseConflict, SupabaseSync, SupabaseSyncError, SupabaseSyncStatus, SupabaseTable,
+  CollectionKey, SupabaseAuthentication, SupabaseConflict, SupabaseSync, SupabaseSyncError, SupabaseSyncStatus, SupabaseTable,
 } from './types.js';
 
 export type ReplicationTable<Rows> = SupabaseTable<Rows> & {
@@ -16,6 +16,7 @@ export interface ReplicationOptions<Rows extends { [K in keyof Rows]: object }> 
   readonly scope: Scope;
   readonly accountId: string;
   readonly client: SupabaseClient;
+  readonly authentication?: SupabaseAuthentication;
   readonly tables: readonly ReplicationTable<Rows>[];
   readonly namespace?: string;
   readonly batchSize?: number;
@@ -43,6 +44,10 @@ export async function startSupabaseReplication<Rows extends { [K in keyof Rows]:
   const { scope } = options;
   if (scope.signal.aborted) throw abortError();
   if (!options.accountId.trim()) throw new Error('Supabase replication requires an accountId.');
+  const authentication = options.authentication ?? 'session';
+  if (authentication !== 'session' && authentication !== 'access-token') {
+    throw new Error(`Supabase authentication must be 'session' or 'access-token', not ${JSON.stringify(authentication)}.`);
+  }
   if (options.namespace !== undefined && !options.namespace.trim()) throw new Error('Supabase namespace must not be empty.');
   if (options.batchSize !== undefined && (!Number.isInteger(options.batchSize) || options.batchSize < 1)) {
     throw new Error('Supabase batchSize must be a positive integer.');
@@ -124,16 +129,20 @@ export async function startSupabaseReplication<Rows extends { [K in keyof Rows]:
 
   const starts: Promise<void>[] = [];
   try {
-    const auth = options.client.auth.onAuthStateChange((_event, session) => {
-      if (!session || session.user.id !== options.accountId) onAbort();
-    });
-    subscriptions.push(auth.data.subscription);
-    if (stopped) auth.data.subscription.unsubscribe();
-    const sessionResult = await Promise.race([options.client.auth.getSession(), canceled]);
-    if (sessionResult.error) throw sessionResult.error;
-    const session = sessionResult.data.session;
-    if (!session) throw new Error('Supabase replication requires an authenticated session.');
-    if (session.user.id !== options.accountId) throw new Error('Supabase session does not match replication accountId.');
+    // An access-token client has no Supabase Auth session: supabase-js makes
+    // every `client.auth` member throw, so only the account scope ends sync.
+    if (authentication === 'session') {
+      const auth = options.client.auth.onAuthStateChange((_event, session) => {
+        if (!session || session.user.id !== options.accountId) onAbort();
+      });
+      subscriptions.push(auth.data.subscription);
+      if (stopped) auth.data.subscription.unsubscribe();
+      const sessionResult = await Promise.race([options.client.auth.getSession(), canceled]);
+      if (sessionResult.error) throw sessionResult.error;
+      const session = sessionResult.data.session;
+      if (!session) throw new Error('Supabase replication requires an authenticated session.');
+      if (session.user.id !== options.accountId) throw new Error('Supabase session does not match replication accountId.');
+    }
     if (stopped) throw abortError();
     for (const { table, collection, modifiedField } of configured) {
       type Doc = Rows[CollectionKey<Rows>];

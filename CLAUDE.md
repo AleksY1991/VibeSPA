@@ -661,7 +661,8 @@ connects a Solid owner to it; `syncSupabaseCollections` from
   `keepLocal` remains the default for the envelope and REST adapters.
 
 `syncSupabaseCollections({ collections, scope, accountId, client, tables, onConflict })`
-shares `syncSupabase`'s account checks, status and cancellation. A table's
+shares `syncSupabase`'s account checks (including `authentication: 'access-token'`),
+status and cancellation. A table's
 `serverColumns` (for example an RLS owner column defaulted to `auth.uid()`) are
 removed from pulled, realtime and conflict rows, so they never reach RxDB or
 Solid and are never pushed. `onConflict` reports a push the server refused when
@@ -895,6 +896,10 @@ automatic live replication to a legacy `LocalStore`. Solid-owned providers use
 `syncSupabaseCollections` from `@vibespa/supabase/collections` instead (see "Solid
 over a replicated native collection"); both share one implementation. Supply a standard authenticated Supabase client
 whose session user matches `accountId`; signout or replacement cancels sync.
+A client created with supabase-js's `accessToken` option (custom or third-party
+JWTs) has no usable `client.auth`: pass `authentication: 'access-token'`. Then
+there is no session check, `accountId` is the caller's assertion (for example a
+JWT claim), and ending the account scope is the only cancellation.
 Register the store before replication in the same account scope so replication
 cancels before the database closes. Keep workspace selection out of that scope.
 

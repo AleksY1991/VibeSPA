@@ -3,6 +3,17 @@ import type { WithDeleted } from 'rxdb';
 
 export type CollectionKey<Rows> = Extract<keyof Rows, string>;
 
+/**
+ * How the Supabase client authenticates.
+ * - `'session'` (default): a Supabase Auth session whose user is `accountId`;
+ *   sign-out or a different user cancels replication.
+ * - `'access-token'`: a client created with supabase-js's `accessToken` option
+ *   (custom or third-party JWTs). Its `client.auth` is unavailable, so there is
+ *   no session check: `accountId` is the caller's assertion and ending the
+ *   account scope is the only cancellation. Row-level security still applies.
+ */
+export type SupabaseAuthentication = 'session' | 'access-token';
+
 export type SupabaseTable<Rows> = {
   [K in CollectionKey<Rows>]: {
     readonly collection: K;

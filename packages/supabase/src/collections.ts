@@ -2,9 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Scope } from '@vibespa/contracts';
 import type { RxCollection } from 'rxdb';
 import { startSupabaseReplication, type ReplicationTable } from './replication.js';
-import type { CollectionKey, SupabaseConflict, SupabaseSync } from './types.js';
+import type { CollectionKey, SupabaseAuthentication, SupabaseConflict, SupabaseSync } from './types.js';
 
-export type { SupabaseConflict, SupabaseSync, SupabaseSyncError, SupabaseSyncStatus } from './types.js';
+export type {
+  SupabaseAuthentication, SupabaseConflict, SupabaseSync, SupabaseSyncError, SupabaseSyncStatus,
+} from './types.js';
 
 /** A table replicated into an application-owned native RxDB collection. */
 export type SupabaseCollectionTable<Rows> = ReplicationTable<Rows>;
@@ -16,6 +18,8 @@ export interface SupabaseCollectionsSyncOptions<Rows extends { [K in keyof Rows]
   /** Use an account scope and an authenticated client whose RLS grants this account access. */
   readonly accountId: string;
   readonly client: SupabaseClient;
+  /** Default `'session'`. Use `'access-token'` for a client built with supabase-js's `accessToken` option. */
+  readonly authentication?: SupabaseAuthentication;
   readonly tables: readonly SupabaseCollectionTable<Rows>[];
   /** Stable backend identity when one local database may connect to different backends. */
   readonly namespace?: string;

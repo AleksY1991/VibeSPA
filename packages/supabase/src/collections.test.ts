@@ -50,7 +50,13 @@ function client(userId: string | null = 'account-a'): SupabaseClient {
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }),
   } } as unknown as SupabaseClient;
 }
-async function start(options: { scope?: Scope; onConflict?: (conflict: SupabaseConflict) => void } = {}) {
+/** supabase-js replaces `auth` with this throwing Proxy when `accessToken` is set. */
+function accessTokenClient(): SupabaseClient {
+  return { auth: new Proxy({}, { get: (_, prop) => {
+    throw new Error(`Supabase Client is configured with the accessToken option, accessing supabase.auth.${String(prop)} is not possible`);
+  } }) } as unknown as SupabaseClient;
+}
+async function start(options:{ scope?: Scope; onConflict?: (conflict: SupabaseConflict) => void } = {}) {
   const state = replica();
   stock.replicate.mockReturnValue(state);
   const sync = await syncSupabaseCollections<Rows>({
@@ -154,6 +160,34 @@ describe('Supabase replication into native collections', () => {
     await expect(syncSupabaseCollections<Rows>({
       collections, scope: createScope(), accountId: 'account-a', client: client('account-b'), tables: [table],
     })).rejects.toThrow(/does not match/);
+    expect(stock.replicate).not.toHaveBeenCalled();
+  });
+
+  it('replicates through an access-token client without touching client.auth until the scope ends', async () => {
+    const state = replica();
+    stock.replicate.mockReturnValue(state);
+    const scope = createScope();
+    const tokenClient = accessTokenClient();
+    const sync = await syncSupabaseCollections<Rows>({
+      collections, scope, accountId: 'telegram-7', client: tokenClient, authentication: 'access-token', tables: [table],
+    });
+    const options = stock.replicate.mock.calls[0]![0] as Options & { client: unknown };
+    expect(options.client).toBe(tokenClient);
+    expect(options.replicationIdentifier).toBe('vibespa:default:telegram-7:intentions:intentions');
+    await vi.waitFor(() => expect(state.start).toHaveBeenCalledOnce());
+    await scope.dispose();
+    expect(state.cancel).toHaveBeenCalledOnce();
+    expect(sync.status.read().phase).toBe('stopped');
+  });
+
+  it('refuses an access-token client in session mode and an unknown authentication mode', async () => {
+    await expect(syncSupabaseCollections<Rows>({
+      collections, scope: createScope(), accountId: 'account-a', client: accessTokenClient(), tables: [table],
+    })).rejects.toThrow(/not possible/);
+    await expect(syncSupabaseCollections<Rows>({
+      collections, scope: createScope(), accountId: 'account-a', client: client(), tables: [table],
+      authentication: 'jwt' as never,
+    })).rejects.toThrow(/authentication/);
     expect(stock.replicate).not.toHaveBeenCalled();
   });
 

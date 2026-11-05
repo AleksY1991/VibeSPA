@@ -3,9 +3,11 @@ import type { Scope } from '@vibespa/contracts';
 import type { LocalStore } from '@vibespa/local-first';
 import { getCollection } from '@vibespa/local-first/adapter';
 import { startSupabaseReplication } from './replication.js';
-import type { SupabaseSync, SupabaseTable } from './types.js';
+import type { SupabaseAuthentication, SupabaseSync, SupabaseTable } from './types.js';
 
-export type { SupabaseConflict, SupabaseSync, SupabaseSyncError, SupabaseSyncStatus, SupabaseTable } from './types.js';
+export type {
+  SupabaseAuthentication, SupabaseConflict, SupabaseSync, SupabaseSyncError, SupabaseSyncStatus, SupabaseTable,
+} from './types.js';
 
 export interface SupabaseSyncOptions<Rows extends { [K in keyof Rows]: object }> {
   readonly store: LocalStore<Rows>;
@@ -13,6 +15,8 @@ export interface SupabaseSyncOptions<Rows extends { [K in keyof Rows]: object }>
   /** Use an account scope and an authenticated client whose RLS grants this account access. */
   readonly accountId: string;
   readonly client: SupabaseClient;
+  /** Default `'session'`. Use `'access-token'` for a client built with supabase-js's `accessToken` option. */
+  readonly authentication?: SupabaseAuthentication;
   readonly tables: readonly SupabaseTable<Rows>[];
   /** Stable backend identity when one local store may connect to different backends. */
   readonly namespace?: string;

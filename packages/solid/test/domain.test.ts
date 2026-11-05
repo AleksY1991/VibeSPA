@@ -221,6 +221,28 @@ describe('Solid-owned domain capability', () => {
     await test.system.dispose();
   });
 
+  it('applies large incoming batches with deletes, re-adds and updates in order', async () => {
+    const transport = controlled(Array.from({ length: 5_000 }, (_, index) => ({ id: `r${index}`, version: 1, document: row(`r${index}`) })));
+    const test = await harness(transport.adapter);
+    await test.owner.settled();
+    expect(test.owner.view.rows).toHaveLength(5_000);
+    const context = transport.context();
+    expect(context.receive({ generation: context.generation, origin: 'adapter', changeId: 'mixed', rows: [
+      { id: 'r1', version: 2, document: null },
+      { id: 'r3', version: 2, document: row('r3', 'updated') },
+      { id: 'r0', version: 2, document: null },
+      { id: 'new', version: 1, document: row('new') },
+      { id: 'r4999', version: 2, document: null },
+    ] }).accepted).toEqual(['r1', 'r3', 'r0', 'new', 'r4999']);
+    const rows = test.owner.view.rows;
+    expect(rows).toHaveLength(4_998);
+    expect(rows.slice(0, 3).map(value => value.id)).toEqual(['r2', 'r3', 'r4']);
+    expect(rows[1]!.title).toBe('updated');
+    expect(rows.at(-1)!.id).toBe('new');
+    expect(rows.at(-2)!.id).toBe('r4998');
+    await test.system.dispose();
+  });
+
   it('treats an adopted durable receipt as an external revision for history', async () => {
     const transport = controlled();
     const test = await harness(transport.adapter);

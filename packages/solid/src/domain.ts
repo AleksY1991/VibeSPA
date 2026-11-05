@@ -88,13 +88,29 @@ export function createSolidDomain<Row extends DomainRow>(scope: ModuleContext, o
     // A command has a module owner for resource creation, but Solid 2 forbids
     // store setters during owned computation. This synchronous write creates no
     // reactive children; admission stays with the private owner above it.
+    // One id index per batch: a per-change findIndex made hydrating N rows O(N²).
+    // Removals are deferred and spliced from the end, so indexed positions stay valid.
     runWithOwner(null, () => setState(draft => {
+      const rows = draft.rows;
+      let positions: Map<string, number> | undefined;
+      const positionOf = (id: string): number => {
+        if (!positions) {
+          positions = new Map();
+          for (let index = 0; index < rows.length; index++) positions.set(rows[index]!.id, index);
+        }
+        return positions.get(id) ?? -1;
+      };
+      const removed: number[] = [];
       for (const change of changes) {
-        const index = draft.rows.findIndex(row => row.id === change.id);
-        if (change.after === null) { if (index >= 0) draft.rows.splice(index, 1); }
-        else if (index < 0) draft.rows.push(copyJson(change.after));
-        else reconcile(copyJson(change.after))(draft.rows[index]!);
+        const index = positionOf(change.id);
+        if (change.after === null) {
+          if (index >= 0) { removed.push(index); positions!.delete(change.id); }
+        } else if (index < 0) {
+          positions!.set(change.id, rows.length);
+          rows.push(copyJson(change.after));
+        } else reconcile(copyJson(change.after))(rows[index]!);
       }
+      for (const index of removed.sort((left, right) => right - left)) rows.splice(index, 1);
     }));
   };
   const ownsPending = (id: string): boolean => pending.some(batch => batch.writes.some(write => write.id === id));
