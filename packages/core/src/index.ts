@@ -1,6 +1,12 @@
 export type { Cleanup, Equality, Readable, Scope, Unsubscribe } from '@vibespa/contracts';
 export { constantReadable, createSource, mapReadable } from './readable.js';
 export type { Source } from './readable.js';
+export { defineContributionContract, contributionPort } from './contributions.js';
+export type {
+  ContributionContract, ContributionContractReference, ContributionPort, ContributionPortReference,
+  ContributionPorts, ContributionRequirements, ModuleContributionDeclarations, ContributionDeclarations,
+  ContributionDefinition, ContributionEntry, ContributionRegistry,
+} from './contributions.js';
 export { defineDataContract, dataPort, validateDataGraph } from './data.js';
 export type {
   DataContract, DataContractReference, DataPort, DataPortReference, DataPorts,
@@ -18,6 +24,13 @@ export type {
 } from '@vibespa/contracts';
 export { createRegistry } from './registry.js';
 export type { Contribution, Registry } from './registry.js';
+export { settingsContributionContract, createSettingsConsumer } from './settings.js';
+export type {
+  SettingsSection, SettingsEntry, SettingsActionEntry, SettingsSelectEntry, SettingsValueEntry,
+  SettingsOption, SettingsConsumer,
+} from './settings.js';
+export { aiContributionContract, defineAiTool, createAiConsumer } from './ai.js';
+export type { AiContribution, AiTool, AiToolDefinition, AiConsumer, AiToolSummary } from './ai.js';
 export { createSessionHost } from './session.js';
 export type { SessionHost, SessionHostOptions, SessionState } from './session.js';
 export { createSystem, external, from } from './system.js';

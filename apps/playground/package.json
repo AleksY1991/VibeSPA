@@ -17,7 +17,11 @@
     "@vibespa/solid": "workspace:*",
     "@vibespa/local-first": "workspace:*",
     "@solidjs/web": "2.0.0-rc.14",
-    "solid-js": "2.0.0-rc.14"
+    "solid-js": "2.0.0-rc.14",
+    "@vibespa/supabase": "workspace:*",
+    "@supabase/supabase-js": "2.110.9",
+    "rxdb": "17.6.0",
+    "rxjs": "7.8.2"
   },
   "devDependencies": {
     "@solidjs/vite-plugin": "3.0.0-next.49",

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const adapterNames = ['solid', 'local-first'];
 /** Packages a generated application installs directly, one archive each. */
-export const applicationPackageNames = ['contracts', 'core', 'solid', 'local-first', 'interaction', 'eslint-plugin'];
+export const applicationPackageNames = ['contracts', 'core', 'solid', 'local-first', 'supabase', 'interaction', 'eslint-plugin'];
 
 function compiledExports(value) {
   if (typeof value === 'string') return value.startsWith('./dist/') ? [value] : [];

@@ -3,6 +3,13 @@ import { defineModule, startModule as startSmallModule } from '@vibespa/core/mod
 import { createSystem as createSystemFromSubpath, external as externalFromSubpath, from as fromSubpath } from '@vibespa/core/system';
 import type { ModuleDefinition } from '@vibespa/core/module';
 import type { Readable } from '@vibespa/contracts';
+import { contributionPort } from '@vibespa/core/contributions';
+import type { ContributionRegistry } from '@vibespa/core/contributions';
+import { createSettingsConsumer, settingsContributionContract } from '@vibespa/core/settings';
+import type { SettingsConsumer, SettingsSection } from '@vibespa/core/settings';
+import { aiContributionContract, createAiConsumer, defineAiTool } from '@vibespa/core/ai';
+import type { AiConsumer, AiContribution } from '@vibespa/core/ai';
+import { constantReadable } from '@vibespa/core/readable';
 import { createGreeting, greeting, smallGreeting } from './greeting.js';
 import type { GreetingExports, GreetingInputs } from './greeting.js';
 
@@ -68,5 +75,68 @@ await subpathSystem.start(narrowReader, {
   maximumLength: externalFromSubpath(undefined),
 });
 await subpathSystem.dispose();
+
+// One feature can contribute to several independently typed framework consumers.
+const contributionProvider = defineFeatureModule<FeatureType.Feature, Record<string, never>, {
+  settings: SettingsSection; tool: AiContribution;
+}>({
+  id: 'contribution-provider', kind: FeatureType.Feature, title: 'Contribution provider',
+  description: 'Supplies Settings and AI through their public contracts.',
+  contract: { inputs: {}, exports: { settings: 'Account settings.', tool: 'Text length AI tool.' } },
+  contributions: { provides: {
+    settings: contributionPort(settingsContributionContract), tool: contributionPort(aiContributionContract),
+  } },
+  load: async () => (_inputs, moduleScope) => {
+    const commands = moduleScope.commands({
+      async signOut(): Promise<void> {},
+      async countCharacters(value: string, _signal: AbortSignal): Promise<number> { return value.length; },
+    });
+    const tool = defineAiTool({
+      id: 'text-length', title: 'Text length', description: 'Count characters in text.', inputSchema: { type: 'string' },
+      parseInput(value: unknown): string {
+        if (typeof value !== 'string') throw new Error('Expected text.');
+        return value;
+      },
+      parseOutput(value: unknown): number {
+        if (typeof value !== 'number') throw new Error('Expected a count.');
+        return value;
+      },
+      execute: commands.countCharacters,
+    });
+    const settings: SettingsSection = { id: 'account', title: constantReadable('Account'), entries: [
+      { id: 'logout', kind: 'action', label: constantReadable('Sign out'), run: commands.signOut },
+    ] };
+    return { settings, tool };
+  },
+});
+const contributionConsumer = defineFeatureModule<FeatureType.Service, {
+  settings: ContributionRegistry<SettingsSection>; ai: ContributionRegistry<AiContribution>;
+}, { settings: SettingsConsumer; ai: AiConsumer }>({
+  id: 'contribution-consumer', kind: FeatureType.Service, title: 'Contribution consumer',
+  description: 'Consumes standard contribution types.',
+  contract: { inputs: { settings: 'Settings registry.', ai: 'AI registry.' }, exports: {
+    settings: 'Settings consumer.', ai: 'AI consumer.',
+  } },
+  contributions: { requires: {
+    settings: contributionPort(settingsContributionContract), ai: contributionPort(aiContributionContract),
+  } },
+  load: async () => (inputs, moduleScope) => ({
+    settings: createSettingsConsumer(moduleScope, inputs.settings), ai: createAiConsumer(moduleScope, inputs.ai),
+  }),
+});
+const contributionSystem = createSystem({ id: 'contributions', modules: [contributionProvider, contributionConsumer] });
+const definitions = contributionSystem.contributions(settingsContributionContract).definitions.read();
+const definitionId: string | undefined = definitions[0]?.definitionId;
+void definitionId;
+await contributionSystem.start(contributionProvider, {});
+const consumers = await contributionSystem.start(contributionConsumer, {
+  settings: contributionSystem.collect(settingsContributionContract), ai: contributionSystem.collect(aiContributionContract),
+});
+const sections: readonly SettingsSection[] = consumers.exports.settings.sections.read();
+void sections;
+const aiResult: unknown = await consumers.exports.ai.invoke('text-length', 'typed contributions');
+void aiResult;
+await consumers.exports.settings.activate('account', 'logout');
+await contributionSystem.dispose();
 await system.dispose();
 await scope.dispose();

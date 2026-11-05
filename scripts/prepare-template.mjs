@@ -61,7 +61,7 @@ async function applicationManifest(archives) {
       check: 'pnpm lint && pnpm typecheck && pnpm test',
     },
     dependencies: pick([...applicationPackageNames.filter(name => name !== 'eslint-plugin').map(framework),
-      '@ui-kit/core', '@solidjs/web', 'solid-js', 'rxdb', 'rxjs']),
+      '@ui-kit/core', '@solidjs/web', 'solid-js', 'rxdb', 'rxjs', '@supabase/supabase-js']),
     devDependencies: pick([framework('eslint-plugin'), '@babel/preset-typescript', '@eslint/js', '@solidjs/vite-plugin', '@types/node', 'eslint',
       'fake-indexeddb', 'globals', 'happy-dom', 'typescript', 'typescript-eslint', 'vite', 'vitest']),
   };

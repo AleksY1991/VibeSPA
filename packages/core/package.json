@@ -85,6 +85,36 @@
       "import": "./dist/data.js",
       "default": "./dist/data.js"
     },
+    "./contributions": {
+      "development": {
+        "types": "./src/contributions.ts",
+        "import": "./src/contributions.ts",
+        "default": "./src/contributions.ts"
+      },
+      "types": "./dist/contributions.d.ts",
+      "import": "./dist/contributions.js",
+      "default": "./dist/contributions.js"
+    },
+    "./settings": {
+      "development": {
+        "types": "./src/settings.ts",
+        "import": "./src/settings.ts",
+        "default": "./src/settings.ts"
+      },
+      "types": "./dist/settings.d.ts",
+      "import": "./dist/settings.js",
+      "default": "./dist/settings.js"
+    },
+    "./ai": {
+      "development": {
+        "types": "./src/ai.ts",
+        "import": "./src/ai.ts",
+        "default": "./src/ai.ts"
+      },
+      "types": "./dist/ai.d.ts",
+      "import": "./dist/ai.js",
+      "default": "./dist/ai.js"
+    },
     "./package.json": "./package.json"
   },
   "dependencies": {

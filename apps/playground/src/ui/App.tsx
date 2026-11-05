@@ -3,12 +3,18 @@ import { createSignal, onCleanup } from 'solid-js';
 import { Button, Card, Form, Link, TextField, constructItem } from '@ui-kit/core';
 import type { ButtonState, FormState, LinkState } from '@ui-kit/core';
 import type { InputFocusHandle } from '@ui-kit/core/contracts/controls';
-import { CheckIcon, PlusIcon, RedoIcon, UndoIcon } from '@ui-kit/core/icons';
+import { CheckIcon, LogOutIcon, PlusIcon, RedoIcon, UndoIcon } from '@ui-kit/core/icons';
+import type { AccountView, SyncView } from '../contracts/account';
 import type { CommandResult, FocusView } from '../contracts/focus';
 import { IntentionList } from './IntentionList';
 import './theme.css';
 
-export function App(props: { readonly focus: FocusView }) {
+export function App(props: {
+  readonly focus: FocusView;
+  /** Supabase backend only: the signed-in account and its replication status. */
+  readonly account?: AccountView;
+  readonly sync?: SyncView;
+}) {
   const history = () => props.focus.history();
   const pending = () => props.focus.pending();
   const delivery = () => props.focus.delivery();
@@ -21,6 +27,22 @@ export function App(props: { readonly focus: FocusView }) {
       case 'failed': return 'Changes kept here · save failed';
       case 'closed': return 'Session ended';
     }
+  };
+  const syncNote = () => {
+    const status = props.sync?.status();
+    if (!status) return '';
+    if (status.error) return `Supabase sync failed: ${status.error}`;
+    switch (status.phase) {
+      case 'starting': return 'Connecting to Supabase…';
+      case 'stopped': return 'Supabase sync stopped';
+      case 'running': return status.active ? 'Syncing with Supabase…'
+        : status.initialSyncComplete ? 'Synced with Supabase' : 'Waiting for Supabase…';
+    }
+  };
+  const replacedNote = () => {
+    const count = props.sync?.replaced()?.count ?? 0;
+    return count === 1 ? 'A newer saved version replaced one of your changes.'
+      : `Newer saved versions replaced ${count} of your changes.`;
   };
   const [draft, setDraft] = createSignal(() => '');
   const [busy, setBusy] = createSignal(() => false);
@@ -38,6 +60,10 @@ export function App(props: { readonly focus: FocusView }) {
     redo: item.observe<ButtonState>('redo', () => ({ disabled: busy() || !history().canRedo })),
     retry: item.observe<ButtonState>('retry', () => ({ disabled: busy() })),
     keepLocal: item.observe<ButtonState>('keepLocal', () => ({ disabled: busy() })),
+    // Sign-out ends this account generation; wait until local changes are delivered.
+    signOut: item.observe<ButtonState>('signOut', () => ({ disabled: busy() || delivery().pending > 0 })),
+    dismiss: item.observe<ButtonState>('dismiss', () => ({ disabled: busy() })),
+    replaced: item.observe('replaced', () => (props.sync?.replaced() ?? null) !== null),
     panel: item.constant('panel', true),
     failed: item.observe('failed', () => delivery().phase === 'failed'),
     home: item.constant<LinkState>('home', { href: '/' }),
@@ -45,6 +71,7 @@ export function App(props: { readonly focus: FocusView }) {
     memory: item.constant<LinkState>('memory', { href: '?backend=memory' }),
     rest: item.constant<LinkState>('rest', { href: '?backend=rest' }),
     indexedDb: item.constant<LinkState>('indexedDb', { href: '?backend=rxdb' }),
+    supabase: item.constant<LinkState>('supabase', { href: '?backend=supabase' }),
   }));
 
   async function perform(operation: () => Promise<CommandResult>, message: string): Promise<CommandResult> {
@@ -84,6 +111,11 @@ export function App(props: { readonly focus: FocusView }) {
       <header class="site-header">
         <Link.View observable={controls.home} surface={{ kind: 'inherit' }} hotkeys={[]} aria-label="VibeSPA home">VibeSPA</Link.View>
         <span class="brand-promise">Good vibes. Clear boundaries.</span>
+        {props.account?.identity ? <div class="account-bar">
+          <span class="account-email">{props.account.identity.email ?? 'Signed in'}</span>
+          <Button.View observable={controls.signOut} surface={{ kind: 'inherit' }} hotkeys={[]} variant="ghost" start={<LogOutIcon />}
+            onActivate={() => { void perform(() => props.account!.commands.signOut(), 'Signing out.'); }}>Sign out</Button.View>
+        </div> : null}
       </header>
 
       <main id="focus" class="main-grid">
@@ -141,7 +173,7 @@ export function App(props: { readonly focus: FocusView }) {
             />
 
             <footer class="panel-footer">
-              <span class="save-note" role="status">{saveNote()}</span>
+              <span class="save-note" role="status">{saveNote()}{props.sync ? ` · ${syncNote()}` : ''}</span>
               <div class="history-controls" aria-label="Change history">
                 <Button.View observable={controls.undo} surface={{ kind: 'inherit' }} hotkeys={[]} variant="ghost" start={<UndoIcon />} onActivate={() => { void perform(() => props.focus.commands.undo(), 'Change undone.'); }}>Undo</Button.View>
                 <Button.View observable={controls.redo} surface={{ kind: 'inherit' }} hotkeys={[]} variant="ghost" start={<RedoIcon />} onActivate={() => { void perform(() => props.focus.commands.redo(), 'Change redone.'); }}>Redo</Button.View>
@@ -153,6 +185,12 @@ export function App(props: { readonly focus: FocusView }) {
               <div><Button.View observable={controls.retry} surface={{ kind: 'inherit' }} hotkeys={[]} onActivate={() => { void perform(() => props.focus.commands.retry(), 'Retry started.'); }}>Retry save</Button.View></div>
               <p>If the saved rows changed elsewhere, keeping your version replaces those rows with your local changes.</p>
               <div><Button.View observable={controls.keepLocal} surface={{ kind: 'inherit' }} hotkeys={[]} onActivate={() => { void perform(() => props.focus.commands.keepLocal(), 'Saving your version.'); }}>Keep my version</Button.View></div>
+              </div>
+            </Card.View>
+            <Card.View observable={controls.replaced} surface={{ kind: 'inherit' }} hotkeys={[]} recipe="notice" tone="warning" attributes={{ role: 'status' }}>
+              <div class="delivery-recovery">
+              <p>{replacedNote()}</p>
+              <div><Button.View observable={controls.dismiss} surface={{ kind: 'inherit' }} hotkeys={[]} onActivate={() => { void perform(() => props.sync!.commands.dismiss(), ''); }}>Dismiss</Button.View></div>
               </div>
             </Card.View>
           </Card.View>
@@ -168,10 +206,10 @@ export function App(props: { readonly focus: FocusView }) {
             <li><strong>Title policy</strong><span>One small rule, on its own.</span></li>
             <li><strong>Focus</strong><span>Applies feature policy through the Data contract.</span></li>
             <li><strong>Intentions data</strong><span>Owns state, commands and history.</span></li>
-            <li><strong>Optional saving</strong><span>Memory, REST or IndexedDB.</span></li>
+            <li><strong>Optional saving</strong><span>Memory, REST, IndexedDB or Supabase.</span></li>
           </ol>
           <p>Composition connects the pieces. Every lifetime has an owner.</p>
-          <div class="backend-links"><span>Try the same UI:</span><Link.View observable={controls.memory} surface={{ kind: 'inherit' }} hotkeys={[]}>Memory</Link.View><Link.View observable={controls.rest} surface={{ kind: 'inherit' }} hotkeys={[]}>Demo REST</Link.View><Link.View observable={controls.indexedDb} surface={{ kind: 'inherit' }} hotkeys={[]}>IndexedDB</Link.View></div>
+          <div class="backend-links"><span>Try the same UI:</span><Link.View observable={controls.memory} surface={{ kind: 'inherit' }} hotkeys={[]}>Memory</Link.View><Link.View observable={controls.rest} surface={{ kind: 'inherit' }} hotkeys={[]}>Demo REST</Link.View><Link.View observable={controls.indexedDb} surface={{ kind: 'inherit' }} hotkeys={[]}>IndexedDB</Link.View><Link.View observable={controls.supabase} surface={{ kind: 'inherit' }} hotkeys={[]}>Supabase</Link.View></div>
         </aside>
       </main>
       <footer class="site-footer"><span>A little structure. A lot of possibility.</span><span>Local first · Micro modular · Yours to shape</span></footer>

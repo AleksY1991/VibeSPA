@@ -57,7 +57,13 @@ pnpm dev
 The example app runs at `http://127.0.0.1:8081`. The same Focus API and UI run
 with IndexedDB by default, no persistence at `?backend=memory`, or a controlled
 fake REST server at `?backend=rest`. IndexedDB uses `vibespa-focus-solid`; the
-previous `vibespa-focus` database is left untouched. Add, toggle, remove,
+previous `vibespa-focus` database is left untouched. `?backend=supabase` signs
+in with an email magic link and syncs the same intentions with a Supabase
+project through a native RxDB collection (see "Solid over a replicated native
+collection" below). It needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
+in `apps/playground/.env.local` and the table, row-level security and auth
+settings in `apps/playground/src/modules/supabase-storage/SUPABASE_SETUP.md`,
+which you apply to your own project; nothing here executes that SQL. Add, toggle, remove,
 complete all, undo, and redo apply to private Solid state before backend
 acknowledgement. Its always-visible System inspector link opens live module contracts,
 dependencies, lifecycle states, errors, and recorded command activity. The
@@ -102,7 +108,7 @@ a registry publication nor a sibling checkout.
   `scripts/export-adapters.mjs`. `create-vibespa` always generates from that
   embedded template, from the checkout or packed.
 - Application archives (`@vibespa/contracts`, `core`, `solid`, `local-first`,
-  `interaction`, `eslint-plugin`) are not bundled: workspace dependencies become exact
+  `supabase`, `interaction`, `eslint-plugin`) are not bundled: workspace dependencies become exact
   versions, and `pnpm-workspace.yaml` overrides every `@vibespa` package to its
   archive, so the installed graph has one instance of each and one Solid. Their
   manifests drop the workspace-only `development` condition and ship only the
@@ -131,8 +137,8 @@ Pinned archives never update on their own. To update an application, run
 here, replace the application's `@vibespa` archives in `vendor/` while retaining
 the `@ui-kit/core` archive, update the
 `file:./vendor/...` entries in its `package.json` and the `@vibespa` overrides
-in its `pnpm-workspace.yaml`, align `solid-js`, `@solidjs/web`, `rxdb` and
-`rxjs`, then run `pnpm install`, `pnpm check` and `pnpm build` there. The
+in its `pnpm-workspace.yaml`, align `solid-js`, `@solidjs/web`, `rxdb`, `rxjs`
+and `@supabase/supabase-js`, then run `pnpm install`, `pnpm check` and `pnpm build` there. The
 generated application's `CLAUDE.md` repeats these steps.
 
 `create-vibespa` can also be packed locally after building. Nothing is published
@@ -158,10 +164,10 @@ by these commands.
 | Package | Responsibility |
 | --- | --- |
 | `@vibespa/contracts` | `Readable<T>`, equality, cleanup, scope, enumerable feature kinds, and neutral diagnostic contracts; no runtime dependencies. |
-| `@vibespa/core` | Privately writable sources, narrow derivations, scopes, typed lazy features, inspectable systems, registries, session replacement. |
+| `@vibespa/core` | Sources, scopes, typed modules and contribution registries, Settings and AI consumers, inspectable systems and session replacement. |
 | `@vibespa/solid` | Owned module runtimes, private Solid domain owners and readonly reactive views, optional REST transport, neutral read bindings, and legacy native RxDB read bindings through explicit subpaths. |
-| `@vibespa/local-first` | Optional RxDB persistence adapter for Solid domain owners; legacy RxDB-owned store, durable batch gate, journal, history, and session controller. |
-| `@vibespa/supabase` | Stock Supabase replication under an authenticated account lifetime. |
+| `@vibespa/local-first` | Optional RxDB persistence adapters for Solid domain owners (a private envelope database, or an application-owned native collection that replication can sync); legacy RxDB-owned store, durable batch gate, journal, history, and session controller. |
+| `@vibespa/supabase` | Stock Supabase replication under an authenticated account lifetime, for native collections or the legacy store. |
 | `@vibespa/settings` | Typed settings with injected persistence, validated loading, serialized saves and flush. |
 | `@vibespa/interaction` | Live surface arbitration and default-deny action dispatch. Browser input is a separate subpath. |
 | `@vibespa/eslint-plugin` | Configurable privacy, UI/domain, and inert-definition rules. |
@@ -286,7 +292,8 @@ const focus = await system.start(focusModule, {
 exports object. The factory still receives ordinary typed inputs. Bindings are
 privately authenticated and immutable, and the caller's map is snapshotted at
 admission. Repeated bindings to one instance produce one dependency edge.
-Dependency edges come only from `from()` bindings: `start` rejects a separate
+Dependency edges come from `from()` and typed contribution `system.collect()`
+bindings: `start` rejects a separate
 `dependencies` option at compile time, including in a non-literal options object,
 and again at runtime.
 
@@ -312,6 +319,114 @@ disposal, and failures remain visible. Inspector subscriber exceptions cannot
 fail application construction or cleanup. `clearEvents()` clears only history;
 sequence numbers continue increasing. `droppedEvents` counts evicted events
 since the last clear.
+
+### Typed contributions and consumers
+
+Contribution channels describe what a module offers to a host. They are
+independent of the module's `FeatureType` responsibility: one Feature module can
+provide Settings, AI tools, and an application-specific contribution through
+separate named public exports. A Service module can consume any of those channels.
+There is no Settings or AI responsibility kind and no ambient service locator.
+
+Publish one canonical `defineContributionContract<Value>({ id, version })` reference
+from a public contract file. A contract can additionally supply a synchronous
+`validate(value: unknown): boolean` admission check. Providers and consumers import
+the same reference; independently recreating the same ID, including a different
+version, is rejected. The value parameter is invariant, so an unrelated payload
+cannot satisfy a typed port.
+
+Declare providers on named exports and consumers on registry-valued inputs:
+
+```ts
+import { contributionPort } from '@vibespa/core/contributions';
+import { settingsContributionContract } from '@vibespa/core/settings';
+import { aiContributionContract } from '@vibespa/core/ai';
+
+// A feature's exports have types SettingsSection and AiContribution respectively.
+contributions: { provides: {
+  settings: contributionPort(settingsContributionContract, { order: 10 }),
+  tool: contributionPort(aiContributionContract),
+} },
+
+// A host's ordinary input has type ContributionRegistry<SettingsSection>.
+contributions: { requires: {
+  settings: contributionPort(settingsContributionContract),
+} },
+```
+
+Select declarations in `createSystem({ modules })`. Unlike Data contracts,
+contribution contracts admit many providers. `system.contributions(contract)`
+returns a readonly typed registry with two neutral readables: `definitions` lists
+inert provider declarations before startup, and `items` lists exact public values
+from ready provider instances. Each item identifies its definition, instance,
+export and order. Registry order is deterministic by declared order and identity;
+discovery never calls a loader. Cancellation removes runtime values while inert
+definitions remain discoverable. Registry observation cannot fail provider startup
+or cancellation.
+
+Use `system.collect(contract)` to bind a consuming module's declared registry
+input. Start all selected providers before the consumer:
+
+```ts
+const account = await system.start(accountSettingsModule, { session: from(session) });
+const localization = await system.start(localizationModule, { storage: external(storage) });
+const settings = await system.start(settingsHostModule, {
+  registry: system.collect(settingsContributionContract),
+});
+```
+
+The authenticated collection binding records a dependency on every contributing
+provider, preserves reverse dependency teardown, and refuses `external(registry)`,
+a registry from another system, or a different canonical contract. Its provider
+plan seals while a consumer is active: adding another matching provider would
+change its dependencies, so compose the complete provider set before consuming.
+Collecting and publishing contributions create no additional runtime or lifetime;
+module commands, cancellation and cleanup retain their ordinary ownership rules.
+
+The built-in Settings channel is exported from `@vibespa/core/settings`.
+`SettingsSection` contains a reactive title and optional description, stable ID,
+optional order, and entries discriminated as `action`, `select`, or `value`.
+Labels, disabled state, options and values use neutral `Readable` contracts.
+`createSettingsConsumer(moduleScope, registry)` exposes reactive `sections` and
+`error`, plus owned `activate(sectionId, entryId)` and
+`select(sectionId, entryId, value)` commands. It validates current availability,
+disabled state and choices before dispatching to the provider. Invalid or
+ambiguous contributions are withheld and reported through `error`. Rendering
+adapters choose controls by entry kind; they do not import individual features.
+The existing `@vibespa/settings` package remains an injected persistence primitive.
+Language catalogs, locale detection, language persistence and translated product
+copy belong to an application's Localization feature, which contributes a select
+entry through this same Settings contract.
+
+The built-in AI channel is exported from `@vibespa/core/ai` and represents callable
+tools rather than a chosen model provider. `defineAiTool<Input, Output>` accepts
+metadata, an input schema, `parseInput`, `parseOutput`, and `execute`. Both the typed
+local `run(input, signal)` call and its unknown-input `invoke` boundary validate
+inputs and outputs and check cancellation. For example:
+
+```ts
+const tool = defineAiTool({
+  id: 'text-length', title: 'Text length', description: 'Count characters in text.',
+  inputSchema: { type: 'string' },
+  parseInput(value: unknown): string {
+    if (typeof value !== 'string') throw new Error('Expected text.');
+    return value;
+  },
+  parseOutput(value: unknown): number {
+    if (typeof value !== 'number') throw new Error('Expected a count.');
+    return value;
+  },
+  execute: commands.countCharacters, // A provider-owned registered command.
+});
+```
+
+`createAiConsumer(moduleScope, registry)` exposes public tool metadata through
+`tools`, catalog failures through `error`, and an owned `invoke(toolId, input)`
+command. It resolves the currently ready tool for each invocation and forwards
+the consumer's cancellation signal. Model adapters can use the metadata and
+invocation capability without receiving arbitrary module internals. The framework
+selects no model, sends no request and supplies no credential or authorization
+policy. Those remain explicit application choices.
 
 ### Data contracts and graph validation
 
@@ -447,15 +562,18 @@ The playground's intentions Data module creates its owner with `createSolidDomai
 `@vibespa/solid/domain` and exports only reads and `scope.commands(...)`. Its
 command API depends on no RxDB document, query, storage engine, or durability
 promise. Its adapter input can be absent, a `createRestDomainAdapter` from
-`@vibespa/solid/domain-rest`, or a `createRxDbDomainAdapter` from
-`@vibespa/local-first/solid-adapter`. These thin custom connectors admit backend
-changes into the existing Solid state; they do not introduce another writable
-domain collection or an RxDB-shaped memory database.
+`@vibespa/solid/domain-rest`, a `createRxDbDomainAdapter` from
+`@vibespa/local-first/solid-adapter`, or a `createRxCollectionDomainAdapter`
+from `@vibespa/local-first/collection-adapter` over a replicated collection.
+These thin custom connectors admit backend changes into the existing Solid
+state; they do not introduce another writable domain collection or an
+RxDB-shaped memory database.
 
 ```text
 UI / consumer -> named feature command -> private Solid-owned domain state
 UI / consumer <- readonly reactive views <- the same Solid state
 Solid state <-> restricted adapter port <-> optional RxDB persistence OR REST
+Solid state <-> collection adapter <-> native RxDB collection <-> replicateSupabase
 ```
 
 Readonly views are cached forwarding wrappers over the same Solid records and
@@ -508,6 +626,52 @@ backend acceptance. Module cancellation refuses new commands and incoming
 changes; owned adapter work is joined before resources close. Shutdown reports
 undelivered accepted gestures as an error. Replacement sessions use a fresh
 generation so old adapters and late responses cannot mutate their state.
+
+### Solid over a replicated native collection
+
+This is Haku's chain: Solid owner ← collection adapter ← native RxDB collection ←
+stock `replicateSupabase`. The application owns an open RxDB database whose
+collection has flat rows with primary key `id`, exactly the domain fields.
+`createRxCollectionDomainAdapter({ collection, onAdopted, onIncomingError })`
+connects a Solid owner to it; `syncSupabaseCollections` from
+`@vibespa/supabase/collections` replicates the same collection.
+
+- The adapter never closes the collection or database. Register the database
+  close before replication in the same account scope, so replication cancels
+  first and the database closes last.
+- Solid rows are plain business JSON: `_rev`, `_meta`, `_attachments` and
+  `_deleted` stay adapter-private, and a deleted row is `document: null`.
+- Every durable change, including replication pulls and other tabs, reaches the
+  owner through its restricted incoming port. Versions are per adapter session,
+  advance with RxDB revision height, and include tombstones. Load pages through
+  `getChangedDocumentsSince` and returns one row per id.
+- Own writes are echoes only when both the predicted revision and the content
+  match: RxDB derives the next revision from the database token, so a
+  replication write can produce the same revision.
+- A retried command returns its original receipt, including after a write that
+  landed before its failure was reported.
+- **Conflict policy: adopt.** When the durable row changed after the owner's
+  baseline (or the write gets a 409), the adapter returns the durable row with
+  `adopted: true` and calls `onAdopted`, instead of refusing the command. Stock
+  replication already resolves remote conflicts server-wins after local
+  acceptance, so refusing at the local boundary would only catch the short
+  window before a save and would block the FIFO queue on a conflict the replica
+  has already decided. The owner treats an adopted receipt as an external
+  revision: undo and redo of the replaced gesture refuse. Refusal plus
+  `keepLocal` remains the default for the envelope and REST adapters.
+
+`syncSupabaseCollections({ collections, scope, accountId, client, tables, onConflict })`
+shares `syncSupabase`'s account checks, status and cancellation. A table's
+`serverColumns` (for example an RLS owner column defaulted to `auth.uid()`) are
+removed from pulled, realtime and conflict rows, so they never reach RxDB or
+Solid and are never pushed. `onConflict` reports a push the server refused when
+the stock handler kept a different row. Both observers are notification only.
+
+The playground's `?backend=supabase` composes this chain per account: an
+`account` Service module (magic link, sign-out), a `supabase-storage` Store module
+(database, replication, adapter) and the unchanged intentions Data and Focus
+modules. Each account gets its own system and application generation, chained so
+the previous account closes before the next opens.
 
 `Readable<T>` has only `read()` and `subscribe(listener)`. Read returns the
 current value; subscribe reports subsequent changes and returns a release.
@@ -727,7 +891,9 @@ describes successful rows when a storage failure follows partial application.
 No automatic schema migration, destructive reset, or server setup is performed.
 
 `await syncSupabase({ store, scope, accountId, client, tables })` binds optional
-automatic live replication. Supply a standard authenticated Supabase client
+automatic live replication to a legacy `LocalStore`. Solid-owned providers use
+`syncSupabaseCollections` from `@vibespa/supabase/collections` instead (see "Solid
+over a replicated native collection"); both share one implementation. Supply a standard authenticated Supabase client
 whose session user matches `accountId`; signout or replacement cancels sync.
 Register the store before replication in the same account scope so replication
 cancels before the database closes. Keep workspace selection out of that scope.

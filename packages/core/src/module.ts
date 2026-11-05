@@ -3,6 +3,8 @@ import type { Cleanup, ModuleState, Scope } from '@vibespa/contracts';
 import { createScope } from './scope.js';
 import { snapshotDataDeclarations } from './data.js';
 import type { DataPorts, ModuleDataDeclarations } from './data.js';
+import { snapshotContributionDeclarations } from './contributions.js';
+import type { ModuleContributionDeclarations } from './contributions.js';
 
 export { FeatureType } from '@vibespa/contracts';
 
@@ -112,6 +114,7 @@ export type FeatureModule<
   readonly title: string;
   readonly description: string;
   readonly contract: FeatureModuleContract<Inputs, Exports>;
+  readonly contributions?: ModuleContributionDeclarations<Inputs, Exports>;
 } & (X extends FeatureType.Data
   ? { readonly data: ModuleDataDeclarations<Inputs, Exports> & { readonly provides: DataPorts<Exports> } }
   : { readonly data?: Omit<ModuleDataDeclarations<Inputs, Exports>, 'provides'> });
@@ -159,6 +162,7 @@ export function defineFeatureModule<
     exports: snapshotDescriptions<Exports>(definition.contract.exports, 'Module exports'),
   });
   const data = definition.data === undefined ? undefined : snapshotDataDeclarations(definition.data);
+  const contributions = definition.contributions === undefined ? undefined : snapshotContributionDeclarations(definition.contributions);
   if (definition.kind === FeatureType.Data && Object.keys(data?.provides ?? {}).length === 0) {
     throw new Error('A Data module must provide at least one declared data export');
   }
@@ -171,6 +175,12 @@ export function defineFeatureModule<
   for (const port of Object.keys(data?.requires ?? {})) {
     if (!Object.hasOwn(contract.inputs, port)) throw new Error(`Unknown data input: ${port}`);
   }
+  for (const port of Object.keys(contributions?.provides ?? {})) {
+    if (!Object.hasOwn(contract.exports, port)) throw new Error(`Unknown contribution export: ${port}`);
+  }
+  for (const port of Object.keys(contributions?.requires ?? {})) {
+    if (!Object.hasOwn(contract.inputs, port)) throw new Error(`Unknown contribution input: ${port}`);
+  }
   return Object.freeze({
     id: definition.id,
     kind: definition.kind,
@@ -178,6 +188,7 @@ export function defineFeatureModule<
     description: definition.description,
     contract,
     ...(data === undefined ? {} : { data }),
+    ...(contributions === undefined ? {} : { contributions }),
     load: definition.load,
   }) as unknown as FeatureModule<X, Inputs, Exports>;
 }

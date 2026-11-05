@@ -82,6 +82,9 @@ importers:
       '@solidjs/web':
         specifier: 2.0.0-rc.14
         version: 2.0.0-rc.14(solid-js@2.0.0-rc.14)
+      '@supabase/supabase-js':
+        specifier: 2.110.9
+        version: 2.110.9
       '@ui-kit/core':
         specifier: file:../../vendor/ui-kit-core-0.1.0-2e6a86911a46fbcbdae4af20b5cce649ed7fb0ba866251bd0e69839a8108cd06.tgz
         version: file:vendor/ui-kit-core-0.1.0-2e6a86911a46fbcbdae4af20b5cce649ed7fb0ba866251bd0e69839a8108cd06.tgz(@floating-ui/utils@0.2.12)(@solidjs/web@2.0.0-rc.14(solid-js@2.0.0-rc.14))(@types/node@26.1.2)(solid-js@2.0.0-rc.14)
@@ -100,6 +103,15 @@ importers:
       '@vibespa/solid':
         specifier: workspace:*
         version: link:../../packages/solid
+      '@vibespa/supabase':
+        specifier: workspace:*
+        version: link:../../packages/supabase
+      rxdb:
+        specifier: 17.6.0
+        version: 17.6.0(rxjs@7.8.2)(typescript@6.0.3)
+      rxjs:
+        specifier: 7.8.2
+        version: 7.8.2
       solid-js:
         specifier: 2.0.0-rc.14
         version: 2.0.0-rc.14

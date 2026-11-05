@@ -39,7 +39,12 @@ export interface AdapterBatch<Row> {
 }
 
 export type RowReceipt<Row> =
-  | { readonly id: string; readonly ok: true; readonly version: number; readonly document: Row | null }
+  | {
+    readonly id: string; readonly ok: true; readonly version: number; readonly document: Row | null;
+    /** The durable row replaced the submitted proposal (an adopt-on-conflict
+     * policy). The owner treats it as an external revision for history. */
+    readonly adopted?: true;
+  }
   | { readonly id: string; readonly ok: false; readonly error: string };
 
 export interface SaveReceipt<Row> {
@@ -75,7 +80,10 @@ export interface DomainAdapterSession<Row> {
   load(): Promise<readonly RemoteRow<Row>[]>;
   /** Ordered, idempotent per (identity, row id). No whole-batch atomicity assumed.
    * Retry preserves identity; accepted rows must return their original receipt.
-   * Conflicts reject explicitly. The owner never silently discards local edits. */
+   * Conflicts reject explicitly by default. An adapter with a documented
+   * adopt-on-conflict policy may instead return an ok receipt carrying the
+   * durable row and `adopted: true`; it must report the replacement through its
+   * own observer. The owner never silently discards local edits on its own. */
   save(batch: AdapterBatch<Row>): Promise<SaveReceipt<Row>>;
   close(): void | Promise<void>;
 }

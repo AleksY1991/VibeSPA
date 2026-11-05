@@ -1,10 +1,12 @@
+import type { System } from '@vibespa/core';
 import { createSolidSystem } from '@vibespa/solid/module';
 import { applicationModules, createApplication } from './composition/createApplication';
 import { createApplicationInteraction } from './composition/createApplicationInteraction';
 import { createDemoRestBackend } from './composition/demoRestBackend';
-import { startApplication } from './composition/startApplication';
+import { startApplication, type RunningApplication } from './composition/startApplication';
 import { startApplicationGeneration, type ApplicationGeneration } from './composition/startApplicationGeneration';
-import { mount, mountInspector, showStartupError } from './ui/mount';
+import { readSupabaseConfig } from './composition/supabaseConfig';
+import { mount, mountInspector, mountSupabase, showStartupError, showSupabaseSetup } from './ui/mount';
 import { prepareApplicationUi } from './ui/runtime';
 
 interface ApplicationHotData {
@@ -27,21 +29,62 @@ try {
   throw error;
 }
 
-const system = createSolidSystem({ id: 'playground', modules: applicationModules });
 const interaction = createApplicationInteraction();
+const previous = (import.meta.hot?.data as ApplicationHotData | undefined)?.generation;
 const backend = new URLSearchParams(location.search).get('backend');
-const applicationOptions = backend === 'memory' ? { adapter: null }
-  : backend === 'rest' ? { adapter: createDemoRestBackend({ latencyMs: 250 }).adapter } : {};
-const generation = startApplicationGeneration({
-  previous: (import.meta.hot?.data as ApplicationHotData | undefined)?.generation,
-  mountInspector: () => interaction.mountInspector(() => mountInspector(inspectorTarget, system.snapshot, () => system.clearEvents(), interaction.snapshot)),
-  startApplication: () => startApplication(() => createApplication(system, applicationOptions), (running) => interaction.mountFocus(() => mount(target, running.focus))),
-  disposeSystem: async () => {
-    await system.dispose();
-    await interaction.dispose();
+
+/** One system's inspector, application and lifetime, serialized after `previous`. */
+function startGeneration(system: System, previous: ApplicationGeneration | undefined, start: () => RunningApplication): ApplicationGeneration {
+  return startApplicationGeneration({
+    previous,
+    mountInspector: () => interaction.mountInspector(() => mountInspector(inspectorTarget!, system.snapshot, () => system.clearEvents(), interaction.snapshot)),
+    startApplication: start,
+    disposeSystem: () => system.dispose(),
+    showStartupError: () => showStartupError(target!),
+  });
+}
+
+async function startBackend(): Promise<ApplicationGeneration> {
+  if (backend === 'supabase') {
+    const config = readSupabaseConfig(import.meta.env);
+    if (!config) {
+      const system = createSolidSystem({ id: 'playground' });
+      return startGeneration(system, previous, () => startApplication(
+        async () => ({ dispose: async () => {} }),
+        () => interaction.mountFocus(() => showSupabaseSetup(target!)),
+      ));
+    }
+    // Supabase's client loads only for this backend.
+    const { startSupabasePlayground } = await import('./composition/startSupabasePlayground');
+    return startSupabasePlayground({
+      config,
+      redirectTo: `${location.origin}${location.pathname}?backend=supabase`,
+      previous,
+      startGeneration,
+      mount: application => interaction.mountFocus(() => mountSupabase(target!, application)),
+    });
+  }
+  const system = createSolidSystem({ id: 'playground', modules: applicationModules });
+  const applicationOptions = backend === 'memory' ? { adapter: null }
+    : backend === 'rest' ? { adapter: createDemoRestBackend({ latencyMs: 250 }).adapter } : {};
+  return startGeneration(system, previous, () => startApplication(
+    () => createApplication(system, applicationOptions),
+    running => interaction.mountFocus(() => mount(target!, running.focus)),
+  ));
+}
+
+const backendGeneration = await startBackend();
+let disposal: Promise<void> | undefined;
+const generation: ApplicationGeneration = {
+  ready: backendGeneration.ready,
+  dispose() {
+    disposal ??= (async () => {
+      await backendGeneration.dispose();
+      await interaction.dispose();
+    })();
+    return disposal;
   },
-  showStartupError: () => showStartupError(target),
-});
+};
 
 if (import.meta.hot) {
   import.meta.hot.dispose((data: ApplicationHotData) => {

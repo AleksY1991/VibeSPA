@@ -2,6 +2,11 @@ import { createScope, createSystem, external, from, startModule } from '@vibespa
 import { createSystem as createSystemFromSubpath, external as externalFromSubpath } from '@vibespa/core/system';
 import { startModule as startSmallModule } from '@vibespa/core/module';
 import { greeting, smallGreeting } from './greeting.js';
+import { contributionPort } from '@vibespa/core/contributions';
+import type { ContributionPort } from '@vibespa/core/contributions';
+import { aiContributionContract } from '@vibespa/core/ai';
+import type { AiTool } from '@vibespa/core/ai';
+import type { SettingsSection } from '@vibespa/core/settings';
 
 await startModule(greeting, { prefix: 123 }, createScope()); // @diagnostic 2322 string
 await startSmallModule(smallGreeting, { prefix: 'Hello', maximumLength: 'many' }, createScope()); // @diagnostic 2322 number
@@ -18,3 +23,10 @@ await system.start(greeting, { prefix: external('Hello') }, { dependencies: [pro
 const independentEdges = { id: 'override', dependencies: [provider] };
 await system.start(greeting, { prefix: external('Hello') }, independentEdges); // @diagnostic 2345 dependencies
 await createSystemFromSubpath({ id: 'subpath' }).start(greeting, { prefix: externalFromSubpath(123) }); // @diagnostic 2322 string
+
+const wrongSettingsPort: ContributionPort<SettingsSection> = contributionPort(aiContributionContract); // @diagnostic 2322 SettingsSection
+void wrongSettingsPort;
+declare const typedAiTool: AiTool<number, string>;
+typedAiTool.run('wrong input', new AbortController().signal); // @diagnostic 2345 number
+const wrongAiResult: Promise<number> = typedAiTool.run(1, new AbortController().signal); // @diagnostic 2322 string
+void wrongAiResult;

@@ -6,7 +6,7 @@ import { intentionsDataModule } from '../modules/intentions-data/definition';
 import { localStorageModule } from '../modules/local-storage/definition';
 import { titlePolicyModule } from '../modules/title-policy/definition';
 
-const maximumTitleLength = 140;
+export const maximumTitleLength = 140;
 
 /** Inert definitions used to validate the complete Data graph before startup. */
 export const applicationModules = [localStorageModule, titlePolicyModule, intentionsDataModule, focusModule] as const;

@@ -221,6 +221,56 @@ describe('Solid-owned domain capability', () => {
     await test.system.dispose();
   });
 
+  it('treats an adopted durable receipt as an external revision for history', async () => {
+    const transport = controlled();
+    const test = await harness(transport.adapter);
+    await test.owner.settled();
+    test.commit(row('one'));
+    transport.responses[0]!.resolve(ack(transport.batches[0]!));
+    await test.owner.settled();
+    test.commit(row('one', 'proposed'));
+    const batch = transport.batches[1]!;
+    transport.responses[1]!.resolve({ identity: batch.identity, rows: [{
+      id: 'one', ok: true, adopted: true, version: 3, document: row('one', 'server'),
+    }] });
+    await test.owner.settled();
+    expect(test.owner.view.rows[0]!.title).toBe('server');
+    expect(test.owner.view.delivery()).toEqual({ phase: 'idle', pending: 0, error: null });
+    // Undo would otherwise write the pre-gesture value over the adopted row.
+    expect(() => test.owner.undo()).toThrow('History conflict');
+    expect(transport.batches).toHaveLength(2);
+    // A later local edit is ordinary intent with the adopted CAS baseline.
+    test.commit(row('one', 'later'));
+    expect(transport.batches[2]!.writes[0]!.expectedVersion).toBe(3);
+    transport.responses[2]!.resolve(ack(transport.batches[2]!));
+    await test.owner.settled();
+    expect(test.owner.view.rows[0]!.title).toBe('later');
+    test.owner.undo();
+    expect(test.owner.view.rows[0]!.title).toBe('server');
+    transport.responses[3]!.resolve(ack(transport.batches[3]!));
+    await test.owner.settled();
+    await test.system.dispose();
+  });
+
+  it('never lets an adopted receipt overwrite a newer local edit', async () => {
+    const transport = controlled();
+    const test = await harness(transport.adapter);
+    await test.owner.settled();
+    test.commit(row('one', 'proposed'));
+    test.commit(row('one', 'newer'));
+    const batch = transport.batches[0]!;
+    transport.responses[0]!.resolve({ identity: batch.identity, rows: [{
+      id: 'one', ok: true, adopted: true, version: 2, document: row('one', 'server'),
+    }] });
+    await tick();
+    expect(test.owner.view.rows[0]!.title).toBe('newer');
+    expect(transport.batches[1]!.writes[0]!.expectedVersion).toBe(2);
+    transport.responses[1]!.resolve(ack(transport.batches[1]!));
+    await test.owner.settled();
+    expect(test.owner.view.rows[0]!.title).toBe('newer');
+    await test.system.dispose();
+  });
+
   it('preserves gesture history across multiple undo/redo and clears redo on new intent', async () => {
     const test = await harness();
     test.commit(row('one'));

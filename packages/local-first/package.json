@@ -48,6 +48,16 @@
       "import": "./dist/solidAdapter.js",
       "default": "./dist/solidAdapter.js"
     },
+    "./collection-adapter": {
+      "development": {
+        "types": "./src/collectionAdapter.ts",
+        "import": "./src/collectionAdapter.ts",
+        "default": "./src/collectionAdapter.ts"
+      },
+      "types": "./dist/collectionAdapter.d.ts",
+      "import": "./dist/collectionAdapter.js",
+      "default": "./dist/collectionAdapter.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {

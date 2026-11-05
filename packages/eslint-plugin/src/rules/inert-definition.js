@@ -2,7 +2,10 @@ import { commonProperties, paths, sourceValue } from '../paths.js';
 
 const functionTypes = new Set(['ArrowFunctionExpression', 'FunctionExpression', 'FunctionDeclaration']);
 const featureTypes = new Set(['Policy', 'Data', 'Store', 'Feature', 'Service', 'View']);
-const coreImports = new Set(['@vibespa/core', '@vibespa/core/module', '@vibespa/core/data']);
+const coreImports = new Set(['@vibespa/core', '@vibespa/core/module', '@vibespa/core/data', '@vibespa/core/contributions']);
+const canonicalContribution = (source, name) =>
+  ((source === '@vibespa/core' || source === '@vibespa/core/settings') && name === 'settingsContributionContract')
+  || ((source === '@vibespa/core' || source === '@vibespa/core/ai') && name === 'aiContributionContract');
 
 export default {
   meta: {
@@ -24,7 +27,7 @@ export default {
     const options = context.options[0] ?? {};
     const location = paths(context, options);
     if (!/(?:^|\/)definition\.[cm]?[jt]s$/.test(location.filename)) return {};
-    const factories = new Set(options.declarationFactories ?? ['defineModule', 'defineFeature', 'defineFeatureModule', 'defineDataContract', 'dataPort']);
+    const factories = new Set(options.declarationFactories ?? ['defineModule', 'defineFeature', 'defineFeatureModule', 'defineDataContract', 'dataPort', 'defineContributionContract', 'contributionPort']);
     const metadataImports = new Set(options.definitionImports ?? []);
     const factoryLocals = new Set();
     const featureTypeLocals = new Set();
@@ -47,12 +50,13 @@ export default {
         const source = sourceValue(node.source);
         const allowedSpecifier = item => item.importKind === 'type' || (item.type === 'ImportSpecifier'
           && ((coreImports.has(source) && factories.has(item.imported.name))
+            || canonicalContribution(source, item.imported.name)
             || ((source === '@vibespa/contracts' || coreImports.has(source)) && item.imported.name === 'FeatureType')));
         if (node.specifiers.length > 0 && node.specifiers.every(allowedSpecifier)) {
           for (const specifier of node.specifiers) {
             if (specifier.importKind === 'type') continue;
             if (specifier.imported.name === 'FeatureType') featureTypeLocals.add(specifier.local.name);
-            else factoryLocals.add(specifier.local.name);
+            else if (factories.has(specifier.imported.name)) factoryLocals.add(specifier.local.name);
           }
           return;
         }

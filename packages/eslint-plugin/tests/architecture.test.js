@@ -103,6 +103,8 @@ tester.run('ui-boundary', plugin.rules['ui-boundary'], {
 
 tester.run('inert-definition', plugin.rules['inert-definition'], {
   valid: [
+    { filename: definitionFile, options: [root], code: "import { FeatureType, defineFeatureModule, contributionPort } from '@vibespa/core'; import { settingsContributionContract } from '@vibespa/core/settings'; export const account = defineFeatureModule({ id: 'account', kind: FeatureType.Feature, contributions: { provides: { settings: contributionPort(settingsContributionContract) } }, load: () => import('./internal/runtime') });" },
+    { filename: definitionFile, options: [root], code: "import { defineContributionContract as contract, contributionPort as port } from '@vibespa/core/contributions'; import { aiContributionContract } from '@vibespa/core/ai'; export const metadata = { local: contract({ id: 'local', version: 1 }), ai: port(aiContributionContract) };" },
     { filename: definitionFile, options: [root], code: "import { FeatureType, defineFeatureModule, dataPort } from '@vibespa/core'; import { tasksData } from './contract'; export const tasks = defineFeatureModule({ id: 'tasks', kind: FeatureType.Data, data: { provides: { tasks: dataPort(tasksData, ['read']) } }, load: () => import('./internal/runtime') });" },
     { filename: definitionFile, options: [root], code: "import { FeatureType, defineFeatureModule, dataPort } from '@vibespa/core'; import { tasksData } from '../tasks/definition'; export const board = defineFeatureModule({ id: 'board', kind: FeatureType.Feature, data: { requires: { tasks: dataPort(tasksData, ['read']) } }, load: () => import('./internal/runtime') });" },
     { filename: definitionFile, options: [root], code: "import type { ModuleDefinition } from '@vibespa/core'; export const definition = { id: 'tasks', load: () => import('./internal/runtime') } satisfies ModuleDefinition;" },
@@ -123,6 +125,8 @@ tester.run('inert-definition', plugin.rules['inert-definition'], {
     { filename: moduleFile, options: [root], code: "import './side-effect'; new Runtime(); start();" },
   ],
   invalid: [
+    { filename: definitionFile, options: [root], code: "import { settingsContributionContract } from '@vibespa/core/settings'; settingsContributionContract();", errors: [inertError] },
+    { filename: definitionFile, options: [root], code: "import { createSettingsConsumer } from '@vibespa/core/settings';", errors: [inertError] },
     { filename: definitionFile, options: [root], code: "import './side-effect';", errors: [inertError] },
     { filename: definitionFile, options: [root], code: "import { createStore } from './internal/store';", errors: [inertError] },
     { filename: definitionFile, options: [root], code: "import { data } from './internal/contract';", errors: [inertError] },

@@ -160,15 +160,27 @@ export function createSolidDomain<Row extends DomainRow>(scope: ModuleContext, o
     const head = pending[0]!;
     const accepted = checked.filter(row => row.ok);
     const normalized: { id: string; after: Row | null }[] = [];
+    const adopted: string[] = [];
     for (const row of accepted) {
       remoteVersions.set(row.id, row.version);
       const sent = batch.writes.find(write => write.id === row.id)!;
       // Acknowledging an older edit must not overwrite a newer local edit.
       if (!scope.signal.aborted && localRevisions.get(row.id) === sent.localRevision
-        && (dirtyVersions.get(row.id) ?? 0) <= row.version) normalized.push({ id: row.id, after: row.document });
+        && (dirtyVersions.get(row.id) ?? 0) <= row.version) {
+        normalized.push({ id: row.id, after: row.document });
+        if (row.adopted) adopted.push(row.id);
+      }
       if ((dirtyVersions.get(row.id) ?? Infinity) <= row.version) dirtyVersions.delete(row.id);
     }
-    if (normalized.length && !scope.signal.aborted) scope.run(() => { apply(normalized); });
+    if (normalized.length && !scope.signal.aborted) {
+      scope.run(() => { apply(normalized); });
+      if (adopted.length) {
+        // An adopted durable row replaced the proposal. Treat it like an
+        // external revision so undo/redo cannot write the refused value back.
+        revision++;
+        for (const id of adopted) { localRevisions.set(id, revision); historyTokens.set(id, revision); }
+      }
+    }
     head.writes = head.writes.filter(write => !accepted.some(row => row.id === write.id));
     if (!head.writes.length) pending.shift();
     if (!scope.signal.aborted) publishLocal();

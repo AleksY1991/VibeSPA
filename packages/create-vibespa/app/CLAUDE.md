@@ -54,7 +54,8 @@ implementation and supplies its surface platform before mounting the app.
 Start modules with `system.start(definition, inputs)`. Bind every input with
 `from(handle, 'key')` or `from(handle)` for a capability exported by a module
 already started in the same system, or `external(value)` for configuration and
-values no module provides. The system records dependency edges from `from()`.
+values no module provides. Typed contribution collections use `system.collect(contract)`.
+The system records dependency edges from both `from()` and `collect()`.
 
 Expose reactive reads as Solid `Accessor<T>`. Convert a neutral `Readable` with
 `moduleAccessor(scope, readable)` from `@vibespa/solid/module`. Declare public
@@ -71,6 +72,33 @@ and writable RxDB handles never reach consumers. Optional thin custom adapters
 use `@vibespa/solid/domain-rest` or `@vibespa/local-first/solid-adapter` through
 the same restricted incoming port. Native RxDB `$$` bindings remain a legacy
 RxDB-owned read path, not two-way Solid persistence.
+
+`?backend=supabase` persists through `@vibespa/local-first/collection-adapter`
+over an application-owned native RxDB collection that `syncSupabaseCollections`
+from `@vibespa/supabase/collections` replicates. That adapter adopts the durable
+or server row on conflict and reports it through `onAdopted`; undo of the
+replaced gesture refuses. Configure `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` in `.env.local` and apply
+`src/modules/supabase-storage/SUPABASE_SETUP.md` to your own project yourself.
+Never execute SQL or access Supabase on the user's behalf; tests mock
+`rxdb/plugins/replication-supabase`.
+
+For feature contributions, publish one canonical `defineContributionContract<Value>`
+reference from a public contract and declare named exports with
+`contributions.provides: { exportName: contributionPort(contract) }`. Consumers
+declare registry-valued inputs with `contributions.requires` and bind them with
+`system.collect(contract)`. Start all selected providers before their consumers;
+additional matching providers are refused while a consumer is active.
+`system.contributions(contract)` exposes inert definitions and ready values
+without starting a provider. Contribution types are independent of `FeatureType`.
+
+Use the canonical `settingsContributionContract` and `createSettingsConsumer`
+from `@vibespa/core/settings` for reactive settings sections with action, select
+and value entries. `@vibespa/core/ai` supplies `aiContributionContract`, typed
+`defineAiTool` input/output parsers, and `createAiConsumer` for tool discovery and
+owned invocation. Settings renderers consume the common entry contract; model
+adapters consume tool metadata and invocation. Providers retain their private
+state, policy and commands. The framework chooses no model or credentials.
 
 Data modules use `FeatureModule<FeatureType.Data>` and declare their public ports
 in `data.provides`. Consumers such as Focus declare `data.requires` against the
@@ -129,6 +157,6 @@ update on their own. To update them from a VibeSPA checkout:
 3. Update every `file:./vendor/...` entry in `package.json` and the matching
    `overrides` in `pnpm-workspace.yaml` to the new file names. The overrides keep
    one instance of each `@vibespa` package across the dependency graph.
-4. Align `solid-js`, `@solidjs/web`, `rxdb` and `rxjs` with the versions the new
-   packages require.
+4. Align `solid-js`, `@solidjs/web`, `rxdb`, `rxjs` and `@supabase/supabase-js`
+   with the versions the new packages require.
 5. Run `pnpm install`, then `pnpm check` and `pnpm build`, and review the changes.

@@ -34,6 +34,9 @@ body { margin: 0; min-width: 320px; }
 .panel-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-block-start: 16px; }
 .history-controls, .backend-links { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .delivery-recovery { display: grid; gap: 12px; }
+.account-bar { display: flex; align-items: center; gap: 8px; margin-inline-start: auto; min-width: 0; }
+.account-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: hsl(var(--ui-muted-foreground)); font-size: var(--ui-text-caption); line-height: var(--ui-text-caption-leading); }
+.sign-in { display: grid; gap: 24px; max-width: 720px; padding-block: 32px 48px; }
 .live-message { min-height: 20px; margin-block-start: 12px; }
 .architecture-note { display: grid; gap: 20px; min-width: 0; padding-block-start: 4px; }
 .module-map { display: grid; gap: 20px; }
